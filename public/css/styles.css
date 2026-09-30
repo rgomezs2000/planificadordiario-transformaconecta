@@ -1,0 +1,1456 @@
+/* ==========================================================================
+   MI PLANIFICADOR DIARIO · Hoja de estilos institucional
+   Programa de Desarrollo Personal "Transforma-Conecta"
+   --------------------------------------------------------------------------
+   Los colores están muestreados directamente de la imagen institucional,
+   así que son los reales de la marca y no una aproximación.
+
+   Todo el CSS de la aplicación vive en este archivo. Bootstrap sólo aporta
+   su rejilla y sus componentes; aquí se ajustan a la identidad visual.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. PALETA INSTITUCIONAL
+   ========================================================================== */
+
+:root {
+    /* --- Naranja (wordmark "TRANSFORMA", "DIARIO", círculo 2) --- */
+    --tc-naranja: #f0600c;
+    --tc-naranja-claro: #fc9000;
+    --tc-naranja-oscuro: #c74a05;
+    --tc-naranja-tenue: #fef0e6;
+
+    /* --- Azules (cabecera, títulos, bandas y tablas) --- */
+    --tc-azul-oscuro: #002060;
+    --tc-azul-profundo: #004090;
+    --tc-azul: #0080d0;
+    --tc-celeste: #009ce4;
+    --tc-celeste-tenue: #e8f4fd;
+
+    /* --- Turquesa / verde agua (wordmark "Conecta", círculo 3) --- */
+    --tc-turquesa: #00ae9c;
+    --tc-turquesa-oscuro: #006c60;
+    --tc-turquesa-tenue: #e6f7f5;
+
+    /* --- Acentos --- */
+    --tc-rojo: #d90b0b;
+    --tc-arena: #fce4a8;
+
+    /* --- Neutros --- */
+    --tc-blanco: #ffffff;
+    --tc-gris-100: #f4f7fb;
+    --tc-gris-200: #e4eaf2;
+    --tc-gris-300: #cfd9e6;
+    --tc-gris-500: #6b7a90;
+    --tc-texto: #10233f;
+
+    /* --- Semánticos de la interfaz --- */
+    --tc-fondo: var(--tc-gris-100);
+    --tc-borde: var(--tc-gris-200);
+    --tc-sombra: 0 6px 18px rgba(0, 32, 96, 0.08);
+    --tc-sombra-alta: 0 14px 34px rgba(0, 32, 96, 0.16);
+    --tc-radio: 1rem;
+    --tc-radio-sm: 0.6rem;
+    --tc-transicion: 180ms ease-in-out;
+
+    /* Ancho del menú lateral */
+    --bs-offcanvas-width: min(86vw, 320px);
+}
+
+/* ==========================================================================
+   2. BASE
+   ========================================================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    /* La página no scrollea: sólo lo hace el contenido, así la cabecera y el
+       pie quedan siempre a la vista. */
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--tc-fondo);
+    color: var(--tc-texto);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+        Arial, sans-serif;
+    font-size: 1rem;
+    line-height: 1.55;
+}
+
+a {
+    color: var(--tc-azul);
+}
+
+a:hover {
+    color: var(--tc-azul-profundo);
+}
+
+/* Contenedor propio: añade el corte para televisores, que Bootstrap no trae. */
+.tc-contenedor {
+    width: 100%;
+    margin-inline: auto;
+    padding-inline: 1rem;
+}
+
+@media (min-width: 576px) {
+    .tc-contenedor {
+        max-width: 540px;
+    }
+}
+
+@media (min-width: 768px) {
+    .tc-contenedor {
+        max-width: 720px;
+    }
+}
+
+@media (min-width: 992px) {
+    .tc-contenedor {
+        max-width: 960px;
+    }
+}
+
+@media (min-width: 1200px) {
+    .tc-contenedor {
+        max-width: 1140px;
+    }
+}
+
+@media (min-width: 1400px) {
+    .tc-contenedor {
+        max-width: 1320px;
+    }
+}
+
+/* Televisores y pantallas muy grandes */
+@media (min-width: 1920px) {
+    .tc-contenedor {
+        max-width: 1680px;
+    }
+}
+
+/* Accesibilidad: se respeta a quien pidió menos movimiento. */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* ==========================================================================
+   3. CABECERA
+   ========================================================================== */
+
+.tc-cabecera {
+    flex: 0 0 auto;
+    background: var(--tc-blanco);
+    border-bottom: 4px solid var(--tc-naranja);
+    box-shadow: var(--tc-sombra);
+    position: relative;
+    z-index: 1030;
+}
+
+.tc-cabecera__fila {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem;
+    padding-block: 0.7rem;
+}
+
+/* --- Botón hamburguesa --- */
+.tc-hamburguesa {
+    order: 1;
+    flex: 0 0 auto;
+    width: 2.85rem;
+    height: 2.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--tc-azul-oscuro);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+    color: var(--tc-azul-oscuro);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion);
+}
+
+.tc-hamburguesa:hover,
+.tc-hamburguesa:focus-visible {
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    outline: none;
+}
+
+.tc-hamburguesa:focus-visible {
+    box-shadow: 0 0 0 0.2rem rgba(0, 128, 208, 0.35);
+}
+
+/* --- Marca (sustituto tipográfico del logotipo) --- */
+.tc-marca {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 0.95;
+    user-select: none;
+}
+
+.tc-marca__transforma {
+    display: block;
+    color: var(--tc-naranja);
+    font-weight: 800;
+    font-size: clamp(0.7rem, 0.55rem + 0.75vw, 1.15rem);
+    letter-spacing: 0.02em;
+}
+
+.tc-marca__conecta {
+    display: block;
+    color: var(--tc-turquesa);
+    font-weight: 700;
+    font-size: clamp(0.85rem, 0.65rem + 0.95vw, 1.45rem);
+    letter-spacing: 0.01em;
+    margin-top: -0.1em;
+}
+
+/* La marca real, cuando exista el archivo en public/img */
+.tc-marca__logo {
+    max-height: 3rem;
+    width: auto;
+}
+
+/* --- Títulos: H3, H1 y H2, en ese orden como en la hoja --- */
+.tc-cabecera__titulos {
+    order: 4;
+    flex: 1 1 100%;
+    min-width: 0;
+    text-align: left;
+}
+
+.tc-cabecera__programa {
+    margin: 0;
+    color: var(--tc-turquesa-oscuro);
+    font-weight: 700;
+    font-size: clamp(0.6rem, 0.52rem + 0.3vw, 0.85rem);
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+}
+
+.tc-cabecera__titulo {
+    margin: 0.1rem 0 0;
+    color: var(--tc-azul-oscuro);
+    font-weight: 800;
+    font-size: clamp(1.25rem, 0.95rem + 2.1vw, 2.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+}
+
+.tc-cabecera__subtitulo {
+    margin: 0.15rem 0 0;
+    color: var(--tc-azul);
+    font-weight: 600;
+    font-size: clamp(0.75rem, 0.65rem + 0.55vw, 1.15rem);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+/* --- Reloj (fecha y hora dinámicas) --- */
+.tc-reloj {
+    order: 3;
+    flex: 1 1 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    padding: 0.45rem 0.7rem;
+    border-left: 3px solid var(--tc-naranja);
+    border-radius: 0 var(--tc-radio-sm) var(--tc-radio-sm) 0;
+    background: var(--tc-naranja-tenue);
+}
+
+.tc-reloj__fecha {
+    color: var(--tc-azul-oscuro);
+    font-weight: 700;
+    font-size: clamp(0.72rem, 0.66rem + 0.28vw, 0.95rem);
+    text-transform: capitalize;
+}
+
+.tc-reloj__hora {
+    color: var(--tc-naranja-oscuro);
+    font-weight: 800;
+    font-size: clamp(0.95rem, 0.85rem + 0.5vw, 1.35rem);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+}
+
+/* --- Banda "ORGÁNIZATE · ACTÚA · AVANZA" --- */
+.tc-cabecera__banda {
+    margin: 0 0 0.7rem;
+    padding: 0.35rem 1rem;
+    border-radius: var(--tc-radio-sm);
+    background: linear-gradient(90deg, var(--tc-turquesa) 0%, var(--tc-turquesa-oscuro) 100%);
+    color: var(--tc-blanco);
+    font-weight: 700;
+    font-size: clamp(0.6rem, 0.54rem + 0.3vw, 0.85rem);
+    letter-spacing: 0.16em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+/* A partir de tablet la cabecera se pone en una sola línea. */
+@media (min-width: 768px) {
+    .tc-cabecera__fila {
+        flex-wrap: nowrap;
+        gap: 1rem;
+    }
+
+    .tc-cabecera__titulos {
+        order: 3;
+        flex: 1 1 auto;
+    }
+
+    .tc-reloj {
+        order: 4;
+        flex: 0 0 auto;
+    }
+
+    .tc-cabecera__banda {
+        margin-top: -0.2rem;
+    }
+}
+
+/* En pantallas anchas el reloj gana presencia y se alinea a la derecha. */
+@media (min-width: 1200px) {
+    .tc-cabecera__fila {
+        padding-block: 1rem;
+        gap: 1.5rem;
+    }
+
+    .tc-marca {
+        flex: 0 0 auto;
+        padding-right: 1.25rem;
+        border-right: 1px solid var(--tc-borde);
+    }
+
+    .tc-reloj {
+        align-items: flex-end;
+        border-left: none;
+        border-right: 3px solid var(--tc-naranja);
+        border-radius: var(--tc-radio-sm) 0 0 var(--tc-radio-sm);
+        padding: 0.55rem 1rem;
+    }
+}
+
+/* ==========================================================================
+   4. MENÚ LATERAL
+   ========================================================================== */
+
+.tc-menu {
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    border-right: 4px solid var(--tc-naranja);
+}
+
+.tc-menu__cabecera {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 1rem 1.1rem;
+    background: var(--tc-azul-profundo);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tc-menu__titulo {
+    margin: 0;
+    color: var(--tc-blanco);
+    font-weight: 800;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.tc-menu__cerrar {
+    border: 0;
+    background: transparent;
+    color: var(--tc-blanco);
+    font-size: 1.35rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
+    border-radius: var(--tc-radio-sm);
+    cursor: pointer;
+}
+
+.tc-menu__cerrar:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.tc-menu__cuerpo {
+    padding: 0.9rem;
+}
+
+.tc-menu__seccion {
+    margin: 0.9rem 0 0.4rem;
+    padding-inline: 0.6rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.tc-menu__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.tc-menu__enlace {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: var(--tc-radio-sm);
+    color: #dce8f7;
+    font-weight: 600;
+    font-size: 0.98rem;
+    text-decoration: none;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion),
+        transform var(--tc-transicion);
+}
+
+.tc-menu__enlace:hover,
+.tc-menu__enlace:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--tc-blanco);
+    text-decoration: none;
+    transform: translateX(3px);
+    outline: none;
+}
+
+.tc-menu__enlace.activo {
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+}
+
+.tc-menu__icono {
+    flex: 0 0 auto;
+    width: 2.35rem;
+    height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+    font-size: 1.15rem;
+}
+
+.tc-menu__icono--naranja {
+    background: var(--tc-naranja);
+}
+
+.tc-menu__icono--turquesa {
+    background: var(--tc-turquesa);
+}
+
+.tc-menu__texto {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.tc-menu__descripcion {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.74rem;
+    font-weight: 500;
+}
+
+.tc-menu__pie {
+    margin-top: auto;
+    padding: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.7rem;
+    text-align: center;
+}
+
+@media (min-width: 1920px) {
+    :root {
+        --bs-offcanvas-width: 420px;
+    }
+
+    .tc-menu__enlace {
+        font-size: 1.1rem;
+    }
+
+    .tc-menu__icono {
+        width: 2.8rem;
+        height: 2.8rem;
+        font-size: 1.4rem;
+    }
+}
+
+/* ==========================================================================
+   5. CONTENIDO
+   ========================================================================== */
+
+/* Único bloque que scrollea. min-height:0 es lo que le permite encogerse
+   dentro del flex y activar su propia barra. */
+.tc-principal {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-block: 1.1rem 2rem;
+}
+
+/* Alto según su contenido. Para tarjetas que deban igualar la altura de su
+   fila (por ejemplo las del menú principal) se usa --completa. */
+.tc-tarjeta {
+    height: auto;
+    padding: 1.1rem;
+    border: 1px solid var(--tc-borde);
+    border-top: 4px solid var(--tc-azul);
+    border-radius: var(--tc-radio);
+    background: var(--tc-blanco);
+    box-shadow: var(--tc-sombra);
+}
+
+.tc-tarjeta--completa {
+    height: 100%;
+}
+
+.tc-tarjeta--naranja {
+    border-top-color: var(--tc-naranja);
+}
+
+.tc-tarjeta--turquesa {
+    border-top-color: var(--tc-turquesa);
+}
+
+.tc-tarjeta__titulo {
+    margin: 0 0 0.35rem;
+    color: var(--tc-azul-oscuro);
+    font-weight: 800;
+    font-size: clamp(1rem, 0.92rem + 0.4vw, 1.3rem);
+}
+
+.tc-tarjeta__texto {
+    margin: 0 0 1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.95rem;
+}
+
+.tc-tarjeta__icono {
+    width: 3rem;
+    height: 3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.6rem;
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul);
+    font-size: 1.5rem;
+}
+
+.tc-tarjeta__icono--naranja {
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja);
+}
+
+.tc-tarjeta__icono--turquesa {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa);
+}
+
+/* --- Botones --- */
+.tc-boton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.1rem;
+    border: 2px solid transparent;
+    border-radius: var(--tc-radio-sm);
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: filter var(--tc-transicion), transform var(--tc-transicion);
+}
+
+.tc-boton:hover {
+    filter: brightness(0.93);
+    transform: translateY(-1px);
+    text-decoration: none;
+}
+
+.tc-boton--naranja {
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+}
+
+.tc-boton--azul {
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+}
+
+.tc-boton--turquesa {
+    background: var(--tc-turquesa);
+    color: var(--tc-blanco);
+}
+
+.tc-boton--contorno {
+    background: transparent;
+    border-color: var(--tc-azul);
+    color: var(--tc-azul);
+}
+
+/* --- Resumen del día --- */
+.tc-resumen {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+
+@media (min-width: 768px) {
+    .tc-resumen {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.tc-resumen__dato {
+    padding: 0.7rem 0.5rem;
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-gris-100);
+    text-align: center;
+}
+
+.tc-resumen__valor {
+    display: block;
+    color: var(--tc-azul-oscuro);
+    font-weight: 800;
+    font-size: clamp(1.1rem, 1rem + 0.6vw, 1.6rem);
+    font-variant-numeric: tabular-nums;
+}
+
+.tc-resumen__etiqueta {
+    display: block;
+    color: var(--tc-gris-500);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.tc-etiqueta {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tc-etiqueta--turquesa {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+/* --- Pie --- */
+.tc-pie {
+    flex: 0 0 auto;
+    padding-block: 0.9rem;
+    border-top: 4px solid var(--tc-naranja);
+    background: var(--tc-azul-oscuro);
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.78rem;
+    text-align: center;
+}
+
+.tc-pie strong {
+    color: var(--tc-blanco);
+}
+
+/* ==========================================================================
+   6. AJUSTES A BOOTSTRAP Y DATATABLES (mismos colores institucionales)
+   ========================================================================== */
+
+.btn-primary {
+    --bs-btn-bg: var(--tc-azul);
+    --bs-btn-border-color: var(--tc-azul);
+    --bs-btn-hover-bg: var(--tc-azul-profundo);
+    --bs-btn-hover-border-color: var(--tc-azul-profundo);
+    --bs-btn-active-bg: var(--tc-azul-profundo);
+    --bs-btn-active-border-color: var(--tc-azul-profundo);
+}
+
+.btn-warning {
+    --bs-btn-bg: var(--tc-naranja);
+    --bs-btn-border-color: var(--tc-naranja);
+    --bs-btn-color: var(--tc-blanco);
+    --bs-btn-hover-bg: var(--tc-naranja-oscuro);
+    --bs-btn-hover-border-color: var(--tc-naranja-oscuro);
+    --bs-btn-hover-color: var(--tc-blanco);
+}
+
+.btn-success {
+    --bs-btn-bg: var(--tc-turquesa);
+    --bs-btn-border-color: var(--tc-turquesa);
+    --bs-btn-hover-bg: var(--tc-turquesa-oscuro);
+    --bs-btn-hover-border-color: var(--tc-turquesa-oscuro);
+}
+
+/* DataTables con la identidad de la marca */
+table.dataTable thead th {
+    background-color: var(--tc-azul);
+    color: var(--tc-blanco);
+    border-bottom: 0;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+table.dataTable tbody tr:nth-child(even) {
+    background-color: var(--tc-gris-100);
+}
+
+table.dataTable tbody tr:hover {
+    background-color: var(--tc-celeste-tenue);
+}
+
+table.dataTable tbody td {
+    vertical-align: middle;
+    font-size: 0.9rem;
+}
+
+/* DataTables 2 nombra sus controles con clases dt-* (no dataTables_wrapper)
+   y usa la paginación de Bootstrap. */
+div.dt-container .dt-paging .page-item.active .page-link {
+    background-color: var(--tc-azul);
+    border-color: var(--tc-azul);
+    color: var(--tc-blanco);
+}
+
+div.dt-container .dt-paging .page-link {
+    color: var(--tc-azul-profundo);
+}
+
+div.dt-container .dt-paging .page-link:hover {
+    background-color: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+}
+
+div.dt-container .dt-search input:focus,
+div.dt-container .dt-length select:focus {
+    border-color: var(--tc-azul);
+    box-shadow: 0 0 0 0.2rem rgba(0, 128, 208, 0.25);
+}
+
+div.dt-container .dt-info {
+    color: var(--tc-gris-500);
+    font-size: 0.82rem;
+}
+
+/* Los controles de DataTables se centran en pantallas estrechas. */
+@media (max-width: 575.98px) {
+    div.dt-container .dt-search,
+    div.dt-container .dt-length,
+    div.dt-container .dt-info,
+    div.dt-container .dt-paging {
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+
+    div.dt-container .dt-search input {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/* ==========================================================================
+   7. FORMULARIO DEL DIARIO
+   ========================================================================== */
+
+:root {
+    /* Semáforo de la energía: se puede retocar aquí sin tocar nada más */
+    --tf-baja: #d90b0b;
+    --tf-media: #f2b705;
+    --tf-alta: #1e9e5a;
+}
+
+.tf-seccion {
+    border-top-color: var(--tc-azul);
+}
+
+.tf-seccion--naranja {
+    border-top-color: var(--tc-naranja);
+}
+
+.tf-seccion--azul {
+    border-top-color: var(--tc-azul);
+}
+
+.tf-seccion--turquesa {
+    border-top-color: var(--tc-turquesa);
+}
+
+.tf-seccion--rojo {
+    border-top-color: var(--tc-rojo);
+}
+
+.tf-titulo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.9rem;
+    color: var(--tc-azul-oscuro);
+    font-weight: 800;
+    font-size: clamp(0.95rem, 0.88rem + 0.35vw, 1.2rem);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.tf-titulo i {
+    color: var(--tc-naranja);
+}
+
+.tf-ayuda {
+    margin: 0 0 0.5rem;
+    color: var(--tc-gris-500);
+    font-size: 0.78rem;
+}
+
+.tf-etiqueta {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--tc-azul-profundo);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+/* --- Día de la semana (sólo lectura, lo marca la fecha) --- */
+.tf-dias {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.tf-dia__letra {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border: 2px solid var(--tc-borde);
+    border-radius: 50%;
+    background: var(--tc-blanco);
+    color: var(--tc-gris-500);
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: default;
+}
+
+.btn-check:checked + .tf-dia__letra {
+    border-color: var(--tc-azul);
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+}
+
+/* --- Energía: un botón por estado, se marca sólo uno --- */
+.tf-energia {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.tf-energia__boton {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border: 2px solid var(--tc-borde);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+    color: var(--tc-gris-500);
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), border-color var(--tc-transicion),
+        color var(--tc-transicion), transform var(--tc-transicion);
+}
+
+.tf-energia__boton:hover {
+    transform: translateY(-1px);
+}
+
+.tf-energia__cara {
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+.tf-energia__nombre {
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.btn-check:checked + .tf-energia__boton--baja {
+    border-color: var(--tf-baja);
+    background: var(--tf-baja);
+    color: var(--tc-blanco);
+}
+
+.btn-check:checked + .tf-energia__boton--media {
+    border-color: var(--tf-media);
+    background: var(--tf-media);
+    color: #4a3400;
+}
+
+.btn-check:checked + .tf-energia__boton--alta {
+    border-color: var(--tf-alta);
+    background: var(--tf-alta);
+    color: var(--tc-blanco);
+}
+
+.btn-check:focus-visible + .tf-energia__boton,
+.btn-check:focus-visible + .tf-dia__letra {
+    box-shadow: 0 0 0 0.2rem rgba(0, 128, 208, 0.3);
+}
+
+/* --- Mis 3 objetivos --- */
+.tf-objetivo {
+    display: grid;
+    grid-template-columns: 2.2rem minmax(0, 1fr);
+    grid-template-areas:
+        "numero etiqueta"
+        "numero campo"
+        "numero cumplido";
+    align-items: center;
+    gap: 0.35rem 0.6rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px dashed var(--tc-borde);
+}
+
+.tf-objetivo:last-child {
+    border-bottom: 0;
+}
+
+.tf-objetivo__numero {
+    grid-area: numero;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+    font-weight: 800;
+    font-size: 1.1rem;
+}
+
+.tf-objetivo__numero--1 {
+    background: var(--tc-celeste);
+}
+
+.tf-objetivo__numero--2 {
+    background: var(--tc-naranja);
+}
+
+.tf-objetivo__numero--3 {
+    background: var(--tc-turquesa);
+}
+
+.tf-objetivo__etiqueta {
+    grid-area: etiqueta;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    line-height: 1.1;
+}
+
+.tf-objetivo__etiqueta strong {
+    color: var(--tc-azul-oscuro);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.tf-objetivo__etiqueta small {
+    color: var(--tc-gris-500);
+    font-size: 0.72rem;
+}
+
+.tf-objetivo__campo {
+    grid-area: campo;
+}
+
+.tf-objetivo__cumplido {
+    grid-area: cumplido;
+    margin-bottom: 0;
+    font-size: 0.78rem;
+}
+
+/* --- Checklist con descripción (antes de empezar / procrastinando) --- */
+.tf-check {
+    padding: 0.45rem 0;
+    border-bottom: 1px dashed var(--tc-borde);
+}
+
+.tf-check:last-child {
+    border-bottom: 0;
+}
+
+.tf-check .form-check-label {
+    font-size: 0.9rem;
+}
+
+.tf-check__detalle {
+    margin-top: 0.35rem;
+    background: var(--tc-gris-100);
+    font-size: 0.82rem;
+}
+
+.tf-check__detalle:enabled {
+    background: var(--tc-blanco);
+    border-color: var(--tc-azul);
+}
+
+/* --- Tabla del horario --- */
+.tf-horario {
+    margin-bottom: 0;
+    font-size: 0.85rem;
+}
+
+.tf-horario thead th {
+    border-bottom: 0;
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tf-horario thead th.tf-horario__col-hora {
+    background: var(--tc-naranja);
+    width: 7.5rem;
+}
+
+.tf-horario thead th.tf-horario__col-check {
+    background: var(--tc-turquesa);
+    width: 3rem;
+}
+
+.tf-horario thead th.tf-horario__col-accion {
+    width: 3rem;
+}
+
+.tf-horario tbody tr:nth-child(even) {
+    background: var(--tc-gris-100);
+}
+
+.tf-horario__vacio {
+    color: var(--tc-gris-500);
+    font-size: 0.82rem;
+}
+
+.tf-horario__quitar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border: 0;
+    border-radius: 50%;
+    background: var(--tc-gris-200);
+    color: var(--tc-rojo);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion);
+}
+
+.tf-horario__quitar:hover {
+    background: var(--tc-rojo);
+    color: var(--tc-blanco);
+}
+
+/* --- Bloque de acción --- */
+.tf-opciones {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.15rem 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.tf-opciones .form-check {
+    margin-bottom: 0;
+    font-size: 0.85rem;
+}
+
+.tf-nota {
+    background: var(--tc-gris-100);
+}
+
+.tf-nota:focus {
+    background: var(--tc-blanco);
+}
+
+/* --- Acciones del formulario --- */
+.tf-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 2px dashed var(--tc-borde);
+}
+
+/* --- Datepicker con la identidad de la marca --- */
+.datepicker {
+    z-index: 1045 !important;
+    border-radius: var(--tc-radio-sm);
+    font-size: 0.85rem;
+}
+
+.datepicker table tr td.active.active,
+.datepicker table tr td.active:hover.active,
+.datepicker table tr td span.active.active {
+    background-color: var(--tc-azul);
+    border-color: var(--tc-azul);
+}
+
+.datepicker table tr td.today,
+.datepicker table tr td.today:hover {
+    background-color: var(--tc-naranja-tenue);
+    border-color: var(--tc-naranja);
+    color: var(--tc-naranja-oscuro);
+}
+
+.datepicker table tr td.day:hover {
+    background-color: var(--tc-celeste-tenue);
+}
+
+/* --- Marcas que usan las funciones de public/js/script.js --- */
+
+/* El radiobutton del día queda oculto: sólo se ve la letra. */
+.tf-dia {
+    position: absolute;
+}
+
+.tf-check__caja {
+    cursor: pointer;
+}
+
+.tf-horario__fila td {
+    vertical-align: middle;
+}
+
+.tf-horario__check {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+
+/* La franja cumplida se resalta sola. */
+.tf-horario__fila:has(.tf-horario__check:checked) {
+    background-color: var(--tc-turquesa-tenue);
+}
+
+/* --- Listado de diarios --- */
+
+.tf-tabla {
+    font-size: 0.88rem;
+}
+
+/* La letra del día, como en el formulario. */
+.tf-tabla__dia {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    margin-right: 0.35rem;
+    border-radius: 50%;
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+    font-size: 0.75rem;
+    font-weight: 800;
+    vertical-align: middle;
+}
+
+.tf-tabla__sin-dato {
+    color: var(--tc-gris-500);
+}
+
+.tf-tabla__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem;
+}
+
+/* Botones de acción de cada fila. */
+.tf-accion {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-gris-100);
+    color: var(--tc-azul-profundo);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion);
+}
+
+.tf-accion:hover {
+    color: var(--tc-blanco);
+}
+
+.tf-accion--modificar:hover {
+    background: var(--tc-azul);
+}
+
+.tf-accion--ver:hover {
+    background: var(--tc-turquesa);
+}
+
+.tf-accion--pdf:hover {
+    background: var(--tc-naranja);
+}
+
+.tf-accion--eliminar {
+    color: var(--tc-rojo);
+}
+
+.tf-accion--eliminar:hover {
+    background: var(--tc-rojo);
+}
+
+/* Chip del nivel de energía, con el semáforo de la marca. */
+.tf-energia-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: var(--tc-gris-200);
+    color: var(--tc-texto);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.tf-energia-chip--baja {
+    background: rgba(217, 11, 11, 0.12);
+    color: var(--tf-baja);
+}
+
+.tf-energia-chip--media {
+    background: rgba(242, 183, 5, 0.2);
+    color: #8a6800;
+}
+
+.tf-energia-chip--alta {
+    background: rgba(30, 158, 90, 0.14);
+    color: var(--tf-alta);
+}
+
+/* --- Campos obligatorios y mensajes de validación --- */
+
+.tf-obligatorio::after {
+    content: " *";
+    color: var(--tc-rojo);
+    font-weight: 800;
+}
+
+/* Etiqueta "Obligatorio" que se va al extremo derecho del título. */
+.tf-obligatorio-tag {
+    margin-left: auto;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Campos con error: borde rojo en el campo y fondo suave en su bloque. */
+.tf-campo--error {
+    border-color: var(--tc-rojo) !important;
+}
+
+.tf-campo--error.form-control,
+.tf-campo--error .form-control,
+.tf-campo--error .tf-energia__boton,
+.tf-campo--error .form-check-input {
+    border-color: var(--tc-rojo) !important;
+}
+
+.tf-objetivo.tf-campo--error,
+.tf-horario__fila.tf-campo--error,
+.tf-check.tf-campo--error,
+.tf-energia.tf-campo--error {
+    background-color: rgba(217, 11, 11, 0.06);
+    border-radius: var(--tc-radio-sm);
+}
+
+/* Panel de mensajes, debajo del formulario. */
+.tf-mensajes {
+    margin-top: 0.9rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--tc-rojo);
+    border-left: 5px solid var(--tc-rojo);
+    border-radius: var(--tc-radio-sm);
+    background-color: #fdf1f1;
+    color: #7d1010;
+    font-size: 0.85rem;
+}
+
+.tf-mensajes__titulo {
+    margin: 0 0 0.35rem;
+    font-weight: 800;
+}
+
+.tf-mensajes ul {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.tf-mensajes li + li {
+    margin-top: 0.15rem;
+}
+
+/* --- Modal de impresión --- */
+
+#modalImprimir .modal-header {
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+}
+
+#modalImprimir .modal-title i {
+    color: var(--tc-naranja);
+}
+
+#modalImprimir .btn-close {
+    filter: invert(1) grayscale(100%) brightness(220%);
+}
+
+#modalImprimir .modal-footer {
+    background: var(--tc-gris-100);
+}
+
+/* ==========================================================================
+   8. FORMATOS DE PANTALLA
+   --------------------------------------------------------------------------
+   La hoja de estilos es "mobile first": lo de arriba ya sirve para móviles.
+   Estos son los cortes previstos, uno por cada formato pedido:
+
+     móviles pequeños     hasta 359.98px
+     smartphones          360px  - 575.98px   (estilos base)
+     phablets             576px  - 767.98px
+     tablets              768px  - 991.98px
+     monitores pequeños   992px  - 1199.98px
+     monitores medianos   1200px - 1399.98px
+     monitores grandes    1400px - 1919.98px
+     televisores          1920px en adelante
+   ========================================================================== */
+
+/* Móviles pequeños: se aprieta el espaciado para que nada se corte. */
+@media (max-width: 359.98px) {
+    .tc-contenedor {
+        padding-inline: 0.6rem;
+    }
+
+    .tc-hamburguesa {
+        width: 2.5rem;
+        height: 2.5rem;
+        font-size: 1.3rem;
+    }
+
+    .tc-cabecera__banda {
+        letter-spacing: 0.08em;
+    }
+
+    .tc-tarjeta {
+        padding: 0.85rem;
+    }
+
+    .tc-resumen {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Tablets en adelante: las tarjetas se reparten en dos columnas. */
+@media (min-width: 768px) {
+    .tc-principal {
+        padding-block: 1.6rem 2.5rem;
+    }
+
+    .tc-tarjeta {
+        padding: 1.35rem;
+    }
+}
+
+/* Monitores y televisores: la interfaz se agranda sin deformarse. */
+@media (min-width: 1400px) {
+    body {
+        font-size: 1.06rem;
+    }
+
+    .tc-tarjeta {
+        padding: 1.6rem;
+    }
+}
+
+@media (min-width: 1920px) {
+    body {
+        font-size: 1.18rem;
+    }
+
+    .tc-cabecera__titulo {
+        font-size: 3.1rem;
+    }
+
+    .tc-tarjeta {
+        padding: 2rem;
+    }
+
+    .tc-boton {
+        font-size: 1.05rem;
+        padding: 0.75rem 1.4rem;
+    }
+}

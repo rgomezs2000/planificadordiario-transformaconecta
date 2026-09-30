@@ -31,7 +31,7 @@ class PreparationItem extends Model
     public function dailyPlans(): BelongsToMany
     {
         return $this->belongsToMany(DailyPlan::class, 'daily_plan_preparation')
-            ->withPivot('is_checked')
+            ->withPivot(['is_checked', 'preparation_items_description'])
             ->withTimestamps();
     }
 

@@ -18,7 +18,7 @@ class HomeController extends Controller
      */
     public function index()
     {
-        return view('home', [
+        return view('home.index', [
             'today' => DailyPlan::findToday(),
             'todayLabel' => Helper::longDate(now(), withWeekday: true),
         ]);

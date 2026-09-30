@@ -16,6 +16,7 @@ class ScheduleEntry extends Model
     protected $fillable = [
         'daily_plan_id',
         'schedule_slot_id',
+        'start_time',
         'activity',
         'is_done',
     ];

@@ -3,95 +3,105 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\Helper;
-use App\Models\ActionBlockDuration;
-use App\Models\ActionBlockOutcome;
+use App\Http\Controllers\Concerns\DatosDelFormulario;
 use App\Models\DailyPlan;
-use App\Models\EnergyLevel;
-use App\Models\GoalType;
-use App\Models\PreparationItem;
-use App\Models\ReflectionQuestion;
-use App\Models\ScheduleSlot;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 /**
  * Controlador del planificador diario.
  *
- * Operaciones: listar, crear, mostrar, modificar, imprimir y eliminar.
- * Las consultas y manipulaciones de base de datos viven en el modelo
- * DailyPlan (y en los modelos de catálogo), aquí solo se invocan.
+ * Listar, crear, mostrar, modificar, imprimir y eliminar. Las consultas y
+ * manipulaciones de base de datos viven en el modelo DailyPlan; aquí sólo se
+ * invocan y se arma la respuesta.
  *
- * Las acciones que el sistema consume por AJAX devuelven JSON con el sobre
- * { ok, message, data } / { ok, message, errors }; las que se navegan
- * devuelven vistas o redirecciones.
+ * Las acciones de AJAX devuelven el sobre { ok, message, data } /
+ * { ok, message, errors }. Los errores se atrapan con try/catch y se cuentan
+ * al cliente para que los muestre en una alerta de bootbox.
  */
 class DailyPlanController extends Controller
 {
+    use DatosDelFormulario;
+
     /* ======================================================================
      |  Listar
      ====================================================================== */
 
-    /** Listado paginado de días (vista). */
-    public function index(Request $request)
+    /**
+     * Página del listado. La tabla la llena DataTables por AJAX desde
+     * diario.tabla, así que no se le pasa nada.
+     */
+    public function index()
     {
-        $filters = $this->filters($request);
-
-        return view('diario.index', [
-            'plans' => DailyPlan::paginateList($filters, $this->perPage($request)),
-            'filters' => $filters,
-            'rangeLabel' => Helper::rangeLabel($filters['from'], $filters['to']),
-            'energyLevels' => EnergyLevel::active()->get(),
-        ]);
+        return view('diario.index');
     }
 
-    /** Listado paginado de días (JSON para AJAX). */
-    public function list(Request $request): JsonResponse
+    /** Todos los días registrados en JSON (GET). */
+    public function list(): JsonResponse
     {
-        $plans = DailyPlan::paginateList($this->filters($request), $this->perPage($request));
+        try {
+            $plans = DailyPlan::allForList();
 
-        return $this->jsonSuccess([
-            'plans' => $plans->getCollection()->map->toListArray()->all(),
-            'pagination' => $this->paginationMeta($plans),
-        ]);
+            return $this->jsonSuccess([
+                'plans' => $plans->map->toListArray()->all(),
+                'total' => $plans->count(),
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo obtener el listado de diarios.', [], 500);
+        }
     }
 
     /* ======================================================================
-     |  Mostrar
+     |  Mostrar y modificar (reutilizan el formulario)
      ====================================================================== */
 
-    /** Un día concreto (vista). */
-    public function show(DailyPlan $dailyPlan)
+    /** Un día en sólo lectura. */
+    public function show(int $dailyPlan)
     {
-        return view('diario.show', [
-            'plan' => $dailyPlan->loadFull(),
-        ]);
+        $plan = DailyPlan::find($dailyPlan);
+
+        if (! $plan) {
+            return redirect()
+                ->route('diario.listado')
+                ->with('error', 'El diario que intentas ver no existe.');
+        }
+
+        try {
+            return view('diario.formulario', $this->datosFormulario($plan->loadFull(), 'ver'));
+        } catch (Throwable $e) {
+            report($e);
+
+            return redirect()
+                ->route('diario.listado')
+                ->with('error', 'No se pudo abrir el diario.');
+        }
     }
 
-    /** Un día concreto (JSON). */
-    public function detail(DailyPlan $dailyPlan): JsonResponse
+    /** Un día listo para modificar. */
+    public function edit(int $dailyPlan)
     {
-        return $this->jsonSuccess([
-            'plan' => $dailyPlan->toDetailArray(),
-        ]);
-    }
+        $plan = DailyPlan::find($dailyPlan);
 
-    /**
-     * El día de hoy (JSON).
-     *
-     * Informa si ya existe para que la interfaz ofrezca crearlo o abrirlo.
-     */
-    public function today(): JsonResponse
-    {
-        $plan = DailyPlan::findToday();
+        if (! $plan) {
+            return redirect()
+                ->route('diario.listado')
+                ->with('error', 'El diario que intentas modificar no existe.');
+        }
 
-        return $this->jsonSuccess([
-            'date' => Helper::date(now(), 'Y-m-d'),
-            'date_label' => Helper::longDate(now(), withWeekday: true),
-            'exists' => $plan !== null,
-            'plan' => $plan?->toDetailArray(),
-        ]);
+        try {
+            return view('diario.formulario', $this->datosFormulario($plan->loadFull(), 'editar'));
+        } catch (Throwable $e) {
+            report($e);
+
+            return redirect()
+                ->route('diario.listado')
+                ->with('error', 'No se pudo abrir el diario para modificarlo.');
+        }
     }
 
     /* ======================================================================
@@ -99,75 +109,90 @@ class DailyPlanController extends Controller
      ====================================================================== */
 
     /**
-     * Formulario de creación para una fecha (?fecha=Y-m-d, por defecto hoy).
+     * Guarda un día nuevo con toda su estructura (POST).
      *
-     * Si esa fecha ya tiene diario no se duplica: se redirige a modificar.
-     */
-    public function create(Request $request)
-    {
-        $date = Helper::toCarbon($request->input('fecha')) ?? Helper::today();
-
-        if ($existing = DailyPlan::findByDate($date)) {
-            return redirect()
-                ->route('diario.edit', $existing)
-                ->with('info', 'El diario del '.Helper::longDate($date, withWeekday: true).' ya existe. Puedes modificarlo.');
-        }
-
-        return view('diario.create', array_merge($this->catalogs(), [
-            'plan_date' => $date->toDateString(),
-            'dateLabel' => Helper::longDate($date, withWeekday: true),
-            'weekLabels' => Helper::weekLabels(),
-        ]));
-    }
-
-    /**
-     * Guarda un día nuevo con toda su estructura (JSON).
-     *
-     * Una fecha ya registrada la rechaza la regla unique de plan_date,
-     * así que el error llega como validación (422) con el sobre uniforme.
+     * La validación va fuera del try/catch a propósito: si falla, Laravel
+     * responde 422 con el detalle por campo y el formulario lo muestra.
      */
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateDay($request);
 
-        $plan = DailyPlan::createDay($data);
+        try {
+            $plan = DailyPlan::createDay($data);
 
-        return $this->jsonSuccess(
-            ['plan' => $plan->toDetailArray()],
-            'Diario del '.Helper::longDate($plan->plan_date, withWeekday: true).' creado correctamente.',
-            201
-        );
+            return $this->jsonSuccess(
+                ['plan' => $plan->toDetailArray()],
+                'Diario del '.Helper::longDate($plan->plan_date, withWeekday: true).' registrado correctamente.',
+                201
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo guardar el diario. Intenta de nuevo.', [], 500);
+        }
     }
 
     /* ======================================================================
      |  Modificar
      ====================================================================== */
 
-    /** Formulario de edición de un día. */
-    public function edit(DailyPlan $dailyPlan)
+    /** Actualiza un día (PUT). */
+    public function update(Request $request, int $dailyPlan): JsonResponse
     {
-        return view('diario.edit', array_merge($this->catalogs(), [
-            'plan' => $dailyPlan->loadFull(),
-            'weekLabels' => Helper::weekLabels(),
-        ]));
-    }
+        $plan = null;
 
-    /** Actualiza un día. Solo se toca lo que venga en la petición (JSON). */
-    public function update(Request $request, DailyPlan $dailyPlan): JsonResponse
-    {
-        $data = $this->validateDay($request, $dailyPlan);
-
-        // Una petición sin ninguna clave válida no debe provocar un UPDATE vacío.
-        if ($data === []) {
-            return $this->jsonError('No se recibió ningún cambio para el diario.');
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+        } catch (Throwable $e) {
+            report($e);
         }
 
-        $plan = $dailyPlan->updateDay($data);
+        if (! $plan) {
+            return $this->jsonError('El diario que intentas modificar no existe.', [], 404);
+        }
 
-        return $this->jsonSuccess(
-            ['plan' => $plan->toDetailArray()],
-            'Diario del '.Helper::longDate($plan->plan_date, withWeekday: true).' actualizado correctamente.'
-        );
+        // Se valida después de comprobar que existe: así un id inexistente
+        // responde 404 y no un error de campos.
+        $data = $this->validateDay($request, $dailyPlan);
+
+        try {
+            $plan = $plan->updateDay($data);
+
+            return $this->jsonSuccess(
+                ['plan' => $plan->toDetailArray()],
+                'Diario del '.Helper::longDate($plan->plan_date, withWeekday: true).' actualizado correctamente.'
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo actualizar el diario. Intenta de nuevo.', [], 500);
+        }
+    }
+
+    /* ======================================================================
+     |  Eliminar
+     ====================================================================== */
+
+    /** Elimina un día y, en cascada, todas sus secciones (DELETE). */
+    public function destroy(int $dailyPlan): JsonResponse
+    {
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+
+            if (! $plan) {
+                return $this->jsonError('El diario que intentas eliminar no existe.', [], 404);
+            }
+
+            $etiqueta = Helper::longDate($plan->plan_date, withWeekday: true);
+            $plan->deleteDay();
+
+            return $this->jsonSuccess(null, 'Diario del '.$etiqueta.' eliminado correctamente.');
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo eliminar el diario. Intenta de nuevo.', [], 500);
+        }
     }
 
     /* ======================================================================
@@ -177,127 +202,136 @@ class DailyPlanController extends Controller
     /**
      * PDF del día.
      *
-     * El paquete barryvdh/laravel-dompdf registra el servicio "dompdf.wrapper".
-     * Si está instalado se devuelve el PDF descargable; si no, se entrega la
-     * plantilla imprimible para usar el diálogo de impresión del navegador:
-     *
-     *     composer require barryvdh/laravel-dompdf
+     * Con ?marca=1 sale con la marca de agua diagonal SPECIMEN.
+     * Si el diario no existe responde 404 en JSON, y el listado lo avisa en una
+     * alerta antes de abrir esta dirección.
      */
-    public function printPdf(DailyPlan $dailyPlan)
+    public function printPdf(Request $request, int $dailyPlan)
     {
-        $plan = $dailyPlan->loadFull();
-        $printView = view('diario.pdf', ['plan' => $plan]);
+        try {
+            $plan = DailyPlan::find($dailyPlan);
 
-        if (app()->bound('dompdf.wrapper')) {
-            return app('dompdf.wrapper')
-                ->loadHTML($printView->render())
-                ->setPaper('letter')
-                ->download($this->pdfFileName($plan));
+            if (! $plan) {
+                return $this->jsonError('El diario que intentas imprimir no existe.', [], 404);
+            }
+
+            $marca = $request->boolean('marca');
+            $plan->loadFull();
+
+            $html = view('diario.pdf', [
+                'plan' => $plan,
+                'marca' => $marca,
+            ])->render();
+
+            $dompdf = Pdf::loadHTML($html)->setPaper('letter')->getDomPDF();
+            $dompdf->render();
+
+            if ($marca) {
+                $this->marcarComoMuestra($dompdf);
+            }
+
+            return response($dompdf->output(), 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$this->pdfFileName($plan, $marca).'"',
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo generar el PDF del diario.', [], 500);
         }
-
-        return $printView;
     }
 
-    /* ======================================================================
-     |  Eliminar
-     ====================================================================== */
-
-    /** Elimina un día y, en cascada, todas sus secciones (JSON). */
-    public function destroy(DailyPlan $dailyPlan): JsonResponse
+    /**
+     * Marca de agua diagonal SPECIMEN sobre todas las páginas.
+     *
+     * Se dibuja con el lienzo de dompdf porque el PDF no admite rotar texto
+     * con CSS.
+     */
+    private function marcarComoMuestra(\Dompdf\Dompdf $dompdf): void
     {
-        $label = Helper::longDate($dailyPlan->plan_date, withWeekday: true);
+        $canvas = $dompdf->getCanvas();
+        $fuente = $dompdf->getFontMetrics()->getFont('Helvetica', 'bold');
 
-        $dailyPlan->deleteDay();
-
-        return $this->jsonSuccess(null, 'Diario del '.$label.' eliminado correctamente.');
+        $canvas->page_text(
+            $canvas->get_width() * 0.08,
+            $canvas->get_height() * 0.62,
+            'SPECIMEN',
+            $fuente,
+            110,
+            [0.78, 0.78, 0.78],
+            0,
+            0,
+            32
+        );
     }
 
     /* ======================================================================
      |  Internos auxiliares
      ====================================================================== */
 
-    /** Filtros del listado, con los nombres de parámetro que usa la interfaz. */
-    private function filters(Request $request): array
+    /** Valida la petición y devuelve sólo los datos validados. */
+    private function validateDay(Request $request, ?int $ignorarId = null): array
     {
-        return [
-            'from' => $request->input('desde'),
-            'to' => $request->input('hasta'),
-            'energy_level_id' => $request->input('energia'),
-            'search' => $request->input('buscar'),
-        ];
+        return $request->validate($this->rules($ignorarId), $this->messages());
     }
 
-    /** Tamaño de página, acotado entre 1 y 100. */
-    private function perPage(Request $request): int
+    /**
+     * Reglas de validación del día completo.
+     *
+     * Son obligatorios: la fecha, la energía, los 3 objetivos, al menos una
+     * franja del horario (con su hora y su actividad) y el cierre del día.
+     * El resto de secciones son opcionales.
+     *
+     * @param  int|null  $ignorarId  Id del día que se está modificando, para que
+     *                               su propia fecha no cuente como duplicada.
+     */
+    private function rules(?int $ignorarId = null): array
     {
-        return min(max((int) $request->input('por_pagina', 15), 1), 100);
-    }
+        $fechaUnica = Rule::unique('daily_plans', 'plan_date');
 
-    /** Catálogos que alimentan el formulario del día. */
-    private function catalogs(): array
-    {
-        return [
-            'energyLevels' => EnergyLevel::active()->get(),
-            'goalTypes' => GoalType::active()->get(),
-            'scheduleSlots' => ScheduleSlot::active()->get(),
-            'preparationItems' => PreparationItem::active()->get(),
-            'reflectionQuestions' => ReflectionQuestion::active()
-                ->category(ReflectionQuestion::CATEGORY_PROCRASTINATION)
-                ->get(),
-            'actionBlockDurations' => ActionBlockDuration::active()->get(),
-            'actionBlockOutcomes' => ActionBlockOutcome::active()->get(),
-        ];
-    }
-
-    /** Valida la petición y devuelve solo los datos validados. */
-    private function validateDay(Request $request, ?DailyPlan $plan = null): array
-    {
-        return $request->validate($this->rules($plan), $this->messages());
-    }
-
-    /** Reglas de validación del día completo (cabecera, secciones y cierre). */
-    private function rules(?DailyPlan $plan = null): array
-    {
-        $dateRules = [$plan ? 'sometimes' : 'required', 'date'];
-
-        $dateRules[] = $plan
-            ? Rule::unique('daily_plans', 'plan_date')->ignore($plan->id)
-            : Rule::unique('daily_plans', 'plan_date');
+        if ($ignorarId) {
+            $fechaUnica->ignore($ignorarId);
+        }
 
         return [
-            // Cabecera y cierre del día
-            'plan_date' => $dateRules,
-            'energy_level_id' => ['nullable', 'integer', 'exists:energy_levels,id'],
-            'achievements' => ['nullable', 'string', 'max:2000'],
-            'pending' => ['nullable', 'string', 'max:2000'],
-            'pending_when' => ['nullable', 'string', 'max:255'],
-            'proud_of' => ['nullable', 'string', 'max:2000'],
+            // Cabecera
+            'plan_date' => ['required', 'date', $fechaUnica],
+            'energy_level_id' => ['required', 'integer', 'exists:energy_levels,id'],
 
-            // Mis 3 objetivos principales
-            'goals' => ['nullable', 'array', 'max:'.DailyPlan::MAX_GOALS],
-            'goals.*.slot' => ['required_with:goals', 'integer', 'between:1,'.DailyPlan::MAX_GOALS, 'distinct'],
+            // Mis 3 objetivos principales: la sección entera es obligatoria
+            'goals' => ['required', 'array', 'size:'.DailyPlan::MAX_GOALS],
+            'goals.*.slot' => ['required', 'integer', 'between:1,'.DailyPlan::MAX_GOALS, 'distinct'],
             'goals.*.goal_type_id' => ['nullable', 'integer', 'exists:goal_types,id'],
-            'goals.*.description' => ['nullable', 'string', 'max:255'],
+            'goals.*.description' => ['required', 'string', 'max:255'],
             'goals.*.is_done' => ['nullable', 'boolean'],
 
-            // Mi horario de hoy
-            'schedule' => ['nullable', 'array'],
-            'schedule.*.schedule_slot_id' => ['required_with:schedule', 'integer', 'exists:schedule_slots,id', 'distinct'],
-            'schedule.*.activity' => ['nullable', 'string', 'max:255'],
+            // Mi horario de hoy: al menos una franja, con hora y actividad
+            'schedule' => ['required', 'array', 'min:1'],
+            'schedule.*.id' => ['nullable', 'integer', 'exists:schedule_entries,id'],
+            'schedule.*.schedule_slot_id' => ['nullable', 'integer', 'exists:schedule_slots,id'],
+            'schedule.*.start_time' => ['required', 'date_format:H:i'],
+            'schedule.*.activity' => ['required', 'string', 'max:255'],
             'schedule.*.is_done' => ['nullable', 'boolean'],
 
-            // Antes de empezar
+            // Cierre del día
+            'achievements' => ['required', 'string', 'max:2000'],
+            'pending' => ['required', 'string', 'max:2000'],
+            'pending_when' => ['required', 'string', 'max:255'],
+            'proud_of' => ['required', 'string', 'max:2000'],
+
+            // Antes de empezar (opcional; si se marca, puede llevar descripción)
             'preparation' => ['nullable', 'array'],
             'preparation.*.preparation_item_id' => ['required_with:preparation', 'integer', 'exists:preparation_items,id', 'distinct'],
             'preparation.*.is_checked' => ['nullable', 'boolean'],
+            'preparation.*.preparation_items_description' => ['nullable', 'string', 'max:2000'],
 
-            // Si estoy procrastinando
+            // Si estoy procrastinando (opcional)
             'reflections' => ['nullable', 'array'],
             'reflections.*.reflection_question_id' => ['required_with:reflections', 'integer', 'exists:reflection_questions,id', 'distinct'],
             'reflections.*.is_checked' => ['nullable', 'boolean'],
             'reflections.*.answer' => ['nullable', 'string', 'max:2000'],
 
-            // Bloque de acción
+            // Bloque de acción (opcional)
             'action_blocks' => ['nullable', 'array'],
             'action_blocks.*.id' => ['nullable', 'integer', 'exists:action_blocks,id'],
             'action_blocks.*.action_block_duration_id' => ['nullable', 'integer', 'exists:action_block_durations,id'],
@@ -306,7 +340,7 @@ class DailyPlanController extends Controller
             'action_blocks.*.started_at' => ['nullable', 'date'],
             'action_blocks.*.finished_at' => ['nullable', 'date', 'after_or_equal:action_blocks.*.started_at'],
 
-            // Notas y recordatorios
+            // Notas y recordatorios (opcional)
             'notes' => ['nullable', 'array'],
             'notes.*.content' => ['nullable', 'string', 'max:1000'],
             'notes.*.sort_order' => ['nullable', 'integer', 'min:0'],
@@ -317,27 +351,36 @@ class DailyPlanController extends Controller
     private function messages(): array
     {
         return [
-            'plan_date.required' => 'Indica la fecha del diario.',
+            'plan_date.required' => 'Selecciona la fecha del diario.',
             'plan_date.date' => 'La fecha no tiene un formato válido.',
             'plan_date.unique' => 'Ya existe un diario con esa fecha.',
 
+            'energy_level_id.required' => 'Selecciona tu nivel de energía de hoy.',
             'energy_level_id.exists' => 'El nivel de energía seleccionado no existe.',
 
-            'goals.max' => 'Solo se permiten 3 objetivos principales.',
-            'goals.*.slot.required_with' => 'Cada objetivo necesita su ranura (1, 2 o 3).',
+            'goals.required' => 'Completa tus 3 objetivos principales de hoy.',
+            'goals.size' => 'Debes registrar exactamente 3 objetivos principales.',
+            'goals.*.slot.required' => 'Cada objetivo necesita su ranura (1, 2 o 3).',
             'goals.*.slot.between' => 'Las ranuras de objetivo van de 1 a 3.',
             'goals.*.slot.distinct' => 'No se puede repetir la misma ranura de objetivo.',
+            'goals.*.description.required' => 'Escribe los 3 objetivos principales de hoy.',
             'goals.*.goal_type_id.exists' => 'El tipo de objetivo seleccionado no existe.',
-            'goals.*.description.max' => 'La descripción del objetivo es demasiado larga.',
 
-            'schedule.*.schedule_slot_id.required_with' => 'Cada fila del horario necesita su franja.',
-            'schedule.*.schedule_slot_id.exists' => 'La franja horaria seleccionada no existe.',
-            'schedule.*.schedule_slot_id.distinct' => 'No se puede repetir la misma franja horaria.',
+            'schedule.required' => 'Agrega al menos una franja en tu horario de hoy.',
+            'schedule.min' => 'Agrega al menos una franja en tu horario de hoy.',
+            'schedule.*.start_time.required' => 'Cada franja del horario necesita su hora.',
+            'schedule.*.start_time.date_format' => 'La hora de la franja no es válida.',
+            'schedule.*.activity.required' => 'Cada franja del horario necesita su actividad.',
+            'schedule.*.id.exists' => 'La franja del horario que intentas modificar no existe.',
 
-            'preparation.*.preparation_item_id.required_with' => 'Cada ítem del checklist necesita su identificador.',
+            'achievements.required' => 'Cuéntanos qué lograste hoy.',
+            'pending.required' => 'Indica qué quedó pendiente.',
+            'pending_when.required' => 'Indica cuándo harás lo pendiente.',
+            'proud_of.required' => 'Escribe por qué estás orgulloso/a de ti hoy.',
+
             'preparation.*.preparation_item_id.exists' => 'El ítem del checklist no existe.',
+            'preparation.*.preparation_items_description.max' => 'La descripción del ítem es demasiado larga.',
 
-            'reflections.*.reflection_question_id.required_with' => 'Cada reflexión necesita su pregunta.',
             'reflections.*.reflection_question_id.exists' => 'La pregunta de reflexión no existe.',
 
             'action_blocks.*.id.exists' => 'El bloque de acción que intentas modificar no existe.',
@@ -372,22 +415,11 @@ class DailyPlanController extends Controller
         ], $status);
     }
 
-    /** Metadatos de paginación para las respuestas JSON. */
-    private function paginationMeta(LengthAwarePaginator $paginator): array
-    {
-        return [
-            'total' => $paginator->total(),
-            'per_page' => $paginator->perPage(),
-            'current_page' => $paginator->currentPage(),
-            'last_page' => $paginator->lastPage(),
-            'from' => $paginator->firstItem(),
-            'to' => $paginator->lastItem(),
-        ];
-    }
-
     /** Nombre del archivo PDF del día. */
-    private function pdfFileName(DailyPlan $plan): string
+    private function pdfFileName(DailyPlan $plan, bool $marca = false): string
     {
-        return 'planificador-diario-'.Helper::date($plan->plan_date, 'Y-m-d').'.pdf';
+        $sufijo = $marca ? '-muestra' : '';
+
+        return 'planificador-diario-'.Helper::date($plan->plan_date, 'Y-m-d').$sufijo.'.pdf';
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Helpers\Helper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -74,15 +75,16 @@ class DailyPlan extends Model
         return $this->hasMany(PlanGoal::class)->orderBy('slot');
     }
 
-    /** El horario del día, ordenado cronológicamente por la franja horaria. */
+    /**
+     * El horario del día, ordenado cronológicamente.
+     * La hora vive en la propia franja (start_time); schedule_slot_id sólo
+     * recuerda de qué franja del catálogo se generó, si fue el caso.
+     */
     public function scheduleEntries(): HasMany
     {
         return $this->hasMany(ScheduleEntry::class)
-            ->orderBy(
-                ScheduleSlot::query()
-                    ->select('start_time')
-                    ->whereColumn('schedule_slots.id', 'schedule_entries.schedule_slot_id')
-            );
+            ->orderBy('schedule_entries.start_time')
+            ->orderBy('schedule_entries.id');
     }
 
     /** Los bloques de acción ejecutados durante el día. */
@@ -103,11 +105,14 @@ class DailyPlan extends Model
         return $this->hasMany(ReflectionAnswer::class);
     }
 
-    /** Checklist "ANTES DE EMPEZAR", con su estado en el pivote. */
+    /**
+     * Checklist "ANTES DE EMPEZAR", con su estado y su descripción libre
+     * ("PC, cuaderno, calculadora") desde el pivote.
+     */
     public function preparationItems(): BelongsToMany
     {
         return $this->belongsToMany(PreparationItem::class, 'daily_plan_preparation')
-            ->withPivot('is_checked')
+            ->withPivot(['is_checked', 'preparation_items_description'])
             ->withTimestamps();
     }
 
@@ -213,6 +218,20 @@ class DailyPlan extends Model
             ->orderByDesc('plan_date')
             ->paginate($perPage)
             ->withQueryString();
+    }
+
+    /**
+     * Todos los días registrados, del más reciente al más antiguo.
+     *
+     * Es lo que alimenta la tabla del listado: se entregan todas las filas y
+     * DataTables se encarga de buscar, ordenar y paginar en el navegador.
+     */
+    public static function allForList(): Collection
+    {
+        return static::query()
+            ->with('energyLevel')
+            ->orderByDesc('plan_date')
+            ->get();
     }
 
     /* ======================================================================
@@ -331,6 +350,7 @@ class DailyPlan extends Model
             'date_label' => Helper::longDate($this->plan_date),
             'day_letter' => $this->weekday_letter,
             'energy' => $this->energyLevel?->name,
+            'energy_slug' => $this->energyLevel?->slug,
             'energy_emoji' => $this->energyLevel?->emoji,
             'achievements' => Helper::limit($this->achievements, 80),
             'goals_count' => (int) ($this->goals_count ?? 0),
@@ -374,7 +394,8 @@ class DailyPlan extends Model
             'schedule' => $this->scheduleEntries->map(fn (ScheduleEntry $entry) => [
                 'id' => $entry->id,
                 'slot_id' => $entry->schedule_slot_id,
-                'hour' => Helper::timeLabel($entry->scheduleSlot?->start_time),
+                'hour' => Helper::timeLabel($entry->start_time ?? $entry->scheduleSlot?->start_time),
+                'start_time' => Helper::time($entry->start_time, 'H:i'),
                 'activity' => $entry->activity,
                 'is_done' => (bool) $entry->is_done,
             ])->all(),
@@ -382,6 +403,7 @@ class DailyPlan extends Model
                 'id' => $item->id,
                 'name' => $item->name,
                 'is_checked' => (bool) $item->pivot->is_checked,
+                'description' => $item->pivot->preparation_items_description,
             ])->all(),
             'reflections' => $this->reflectionAnswers->map(fn (ReflectionAnswer $answer) => [
                 'id' => $answer->id,
@@ -414,17 +436,28 @@ class DailyPlan extends Model
      |  Internos: estructura hija
      ====================================================================== */
 
-    /** Crea las franjas del horario que falten, según el catálogo activo. */
+    /**
+     * Crea las franjas del horario que falten, copiando la hora del catálogo.
+     * Es sólo un punto de partida: el formulario permite añadir y quitar filas
+     * con la hora que se quiera.
+     */
     protected function generateScheduleEntries(): void
     {
-        $slotIds = ScheduleSlot::active()->pluck('id');
+        $slots = ScheduleSlot::active()->get(['id', 'start_time']);
 
-        if ($slotIds->isEmpty()) {
+        if ($slots->isEmpty()) {
             return;
         }
 
-        $existing = $this->scheduleEntries()->pluck('schedule_slot_id');
-        $missing = $slotIds->diff($existing)->map(fn (int $id) => ['schedule_slot_id' => $id]);
+        $existing = $this->scheduleEntries()->pluck('schedule_slot_id')->filter()->all();
+
+        $missing = $slots
+            ->reject(fn (ScheduleSlot $slot) => in_array($slot->id, $existing, true))
+            ->map(fn (ScheduleSlot $slot) => [
+                'schedule_slot_id' => $slot->id,
+                'start_time' => $slot->start_time,
+            ])
+            ->values();
 
         if ($missing->isNotEmpty()) {
             $this->scheduleEntries()->createMany($missing->all());
@@ -515,31 +548,53 @@ class DailyPlan extends Model
         }
     }
 
-    /** Horario: actualiza la actividad y el check de cada franja enviada. */
+    /**
+     * Horario: la lista enviada es la definitiva. Se actualizan las franjas que
+     * traen id y se crean las nuevas; las que ya no vienen en la lista se borran.
+     */
     protected function syncScheduleActivities(array $entries): void
     {
-        foreach ($entries as $entry) {
-            $slotId = $entry['schedule_slot_id'] ?? null;
+        $kept = [];
 
-            if (! $slotId) {
-                continue;
+        foreach ($entries as $entry) {
+            $attributes = [];
+
+            if (array_key_exists('start_time', $entry)) {
+                $attributes['start_time'] = $entry['start_time'] ?: null;
             }
 
-            $model = $this->scheduleEntries()->firstOrNew(['schedule_slot_id' => $slotId]);
+            if (array_key_exists('schedule_slot_id', $entry)) {
+                $attributes['schedule_slot_id'] = $entry['schedule_slot_id'] ?: null;
+            }
 
             if (array_key_exists('activity', $entry)) {
-                $model->activity = Helper::strip($entry['activity']) ?: null;
+                $attributes['activity'] = Helper::strip($entry['activity']) ?: null;
             }
 
             if (array_key_exists('is_done', $entry)) {
-                $model->is_done = (bool) $entry['is_done'];
+                $attributes['is_done'] = (bool) $entry['is_done'];
             }
 
-            $model->save();
+            $model = ! empty($entry['id'])
+                ? $this->scheduleEntries()->find($entry['id'])
+                : null;
+
+            if ($model) {
+                $model->update($attributes);
+            } else {
+                $model = $this->scheduleEntries()->create($attributes);
+            }
+
+            $kept[] = $model->id;
         }
+
+        $this->scheduleEntries()->whereNotIn('id', $kept)->delete();
     }
 
-    /** Checklist: marca o desmarca los ítems enviados. */
+    /**
+     * Checklist "ANTES DE EMPEZAR": marca o desmarca cada ítem y guarda su
+     * descripción libre ("PC, cuaderno, calculadora").
+     */
     protected function syncPreparationItems(array $items): void
     {
         foreach ($items as $item) {
@@ -549,9 +604,14 @@ class DailyPlan extends Model
                 continue;
             }
 
-            $this->preparationItems()->syncWithoutDetaching([
-                $itemId => ['is_checked' => (bool) ($item['is_checked'] ?? false)],
-            ]);
+            $pivot = ['is_checked' => (bool) ($item['is_checked'] ?? false)];
+
+            if (array_key_exists('preparation_items_description', $item)) {
+                $pivot['preparation_items_description'] =
+                    Helper::strip($item['preparation_items_description']) ?: null;
+            }
+
+            $this->preparationItems()->syncWithoutDetaching([$itemId => $pivot]);
         }
     }
 
@@ -579,7 +639,11 @@ class DailyPlan extends Model
         }
     }
 
-    /** Notas: la lista enviada es la definitiva, se reemplaza la del día. */
+    /**
+     * Notas: la lista enviada es la definitiva, se reemplaza la del día.
+     * Se recorta sin colapsar los saltos de línea, porque el formulario manda
+     * un único campo de texto múltiple.
+     */
     protected function syncNotes(array $notes): void
     {
         $this->notes()->delete();
@@ -587,7 +651,7 @@ class DailyPlan extends Model
         $order = 1;
 
         foreach ($notes as $note) {
-            $content = Helper::strip($note['content'] ?? null);
+            $content = trim((string) ($note['content'] ?? ''));
 
             if ($content === '') {
                 continue;
