@@ -32,7 +32,7 @@
     <form id="formulario-diario" method="POST" action="{{ $accion }}"
           data-modo="{{ $modo }}" data-metodo="{{ $metodo }}"
           data-indice-horario="{{ $indiceHorario }}"
-          data-url-listado="{{ route('diario.listado') }}" novalidate>
+          data-url-exito="{{ $esEdicion ? route('diario.listado') : route('home') }}" novalidate>
         @csrf
         @if ($metodo !== 'POST')
             @method($metodo)

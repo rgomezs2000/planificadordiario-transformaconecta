@@ -15,7 +15,7 @@
      3. Casillas que habilitan su campo de texto múltiple
      4. Botón limpiar
      5. Validación de los campos obligatorios y mensajes bajo el formulario
-     6. Guardado por AJAX, con confirmación cuando falten datos opcionales
+   6. Guardado por AJAX, con confirmación antes de registrar el diario
    ========================================================================== */
 
 window.Planificador = window.Planificador || {};
@@ -509,8 +509,8 @@ window.Planificador = window.Planificador || {};
 
         /**
          * Si falta algún obligatorio se muestran los mensajes debajo del
-         * formulario y se lleva el foco al primero. Si están todos, pero
-         * quedaron datos opcionales sin llenar, se pregunta antes de guardar.
+         * formulario y se lleva el foco al primero. Cuando todos están
+         * completos, siempre pide la confirmación antes de guardar.
          */
         enviar: function () {
             var self = this;
@@ -525,48 +525,18 @@ window.Planificador = window.Planificador || {};
 
             this.mostrarErrores([]);
 
-            var faltantes = this.opcionalesVacios();
-
-            if (! faltantes.length) {
-                this.guardar();
-
-                return;
-            }
-
             P.Alerta.confirmar({
-                titulo: 'Registrar el diario',
-                mensaje: 'Faltan datos opcionales: ' + faltantes.join(', ') +
-                    '. ¿Deseas registrar el diario de todas formas?',
-                textoAceptar: 'Sí, registrar',
+                titulo: this.modo === 'editar' ? 'Modificar el diario' : 'Guardar el diario',
+                mensaje: this.modo === 'editar'
+                    ? '¿Desea guardar los cambios del diario?'
+                    : '¿Desea guardar el diario?',
+                textoAceptar: 'Sí, guardar',
                 textoCancelar: 'Cancelar',
                 claseAceptar: 'btn btn-warning',
                 alAceptar: function () {
                     self.guardar();
                 }
             });
-        },
-
-        /** Datos opcionales que quedaron sin llenar (sólo para avisar). */
-        opcionalesVacios: function () {
-            var faltantes = [];
-
-            if ($.trim(String($('#notes').val() || '')) === '') {
-                faltantes.push('notas y recordatorios');
-            }
-
-            if (! $('input[name="action_blocks[0][action_block_duration_id]"]:checked').length) {
-                faltantes.push('duración del bloque de acción');
-            }
-
-            if (! $('input[name="action_blocks[0][action_block_outcome_id]"]:checked').length) {
-                faltantes.push('resultado del bloque de acción');
-            }
-
-            if ($.trim(String($('#bloque-tarea').val() || '')) === '') {
-                faltantes.push('en qué vas a trabajar en el bloque');
-            }
-
-            return faltantes;
         },
 
         /** Envía el formulario: POST al crear y PUT al modificar. */
@@ -603,7 +573,7 @@ window.Planificador = window.Planificador || {};
                         respuesta.message,
                         esEdicion ? 'Diario actualizado' : 'Diario registrado',
                         function () {
-                            window.location.href = $formulario.attr('data-url-listado');
+                            window.location.href = $formulario.attr('data-url-exito');
                         }
                     );
                 },
