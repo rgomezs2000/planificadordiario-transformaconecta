@@ -672,6 +672,21 @@ class DailyPlan extends Model
         $kept = [];
 
         foreach ($blocks as $block) {
+            // El formulario siempre envía la estructura action_blocks[0], aun
+            // cuando el usuario no complete esta sección opcional. No creemos
+            // una fila vacía por ese mero hecho.
+            $hasContent = collect([
+                $block['action_block_duration_id'] ?? null,
+                $block['action_block_outcome_id'] ?? null,
+                Helper::strip($block['task'] ?? null),
+                $block['started_at'] ?? null,
+                $block['finished_at'] ?? null,
+            ])->contains(fn (mixed $value) => $value !== null && $value !== '');
+
+            if (! $hasContent) {
+                continue;
+            }
+
             $attributes = array_filter([
                 'action_block_duration_id' => $block['action_block_duration_id'] ?? null,
                 'action_block_outcome_id' => $block['action_block_outcome_id'] ?? null,
