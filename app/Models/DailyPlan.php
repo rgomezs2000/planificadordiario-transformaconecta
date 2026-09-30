@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Tabla eje del planificador: un registro por día.
@@ -239,12 +240,29 @@ class DailyPlan extends Model
      ====================================================================== */
 
     /**
+     * Ejecuta la operación dentro de una transacción.
+     *
+     * Si algo falla se deshace todo, queda constancia en el registro y el error
+     * sube al controlador, que decide qué responder al cliente.
+     */
+    protected static function enTransaccion(callable $operacion): mixed
+    {
+        try {
+            return DB::transaction($operacion);
+        } catch (Throwable $e) {
+            report($e);
+
+            throw $e;
+        }
+    }
+
+    /**
      * Crea un día completo: la cabecera, su estructura hija sacada de los
      * catálogos y los datos que vengan del formulario.
      */
     public static function createDay(array $data): static
     {
-        return DB::transaction(function () use ($data) {
+        return static::enTransaccion(function () use ($data) {
             $plan = static::create([
                 'plan_date' => Helper::toCarbon($data['plan_date']),
                 'energy_level_id' => $data['energy_level_id'] ?? null,
@@ -264,7 +282,7 @@ class DailyPlan extends Model
     /** Modifica el día. Solo se tocan las claves que vienen en $data. */
     public function updateDay(array $data): static
     {
-        return DB::transaction(function () use ($data) {
+        return static::enTransaccion(function () use ($data) {
             $attributes = [];
 
             if (($data['plan_date'] ?? null) !== null) {
@@ -290,7 +308,7 @@ class DailyPlan extends Model
     /** Elimina el día; las claves foráneas en cascada limpian sus hijos. */
     public function deleteDay(): bool
     {
-        return (bool) $this->delete();
+        return (bool) static::enTransaccion(fn () => $this->delete());
     }
 
     /** ¿Se registró el cierre del día? */

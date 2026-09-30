@@ -6,6 +6,7 @@ use App\Helpers\Helper;
 use App\Http\Controllers\Concerns\DatosDelFormulario;
 use App\Models\DailyPlan;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Dompdf\Dompdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -247,7 +248,7 @@ class DailyPlanController extends Controller
      * Se dibuja con el lienzo de dompdf porque el PDF no admite rotar texto
      * con CSS.
      */
-    private function marcarComoMuestra(\Dompdf\Dompdf $dompdf): void
+    private function marcarComoMuestra(Dompdf $dompdf): void
     {
         $canvas = $dompdf->getCanvas();
         $fuente = $dompdf->getFontMetrics()->getFont('Helvetica', 'bold');
