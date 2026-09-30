@@ -32,7 +32,7 @@
     <form id="formulario-diario" method="POST" action="{{ $accion }}"
           data-modo="{{ $modo }}" data-metodo="{{ $metodo }}"
           data-indice-horario="{{ $indiceHorario }}"
-          data-url-listado="{{ route('diario.listado') }}" novalidate>
+          data-url-exito="{{ $esEdicion ? route('diario.listado') : route('home') }}" novalidate>
         @csrf
         @if ($metodo !== 'POST')
             @method($metodo)
@@ -259,7 +259,8 @@
                             <textarea class="form-control form-control-sm tf-check__detalle"
                                       id="preparacion-texto-{{ $item->id }}"
                                       name="preparation[{{ $indice }}][preparation_items_description]"
-                                      rows="2" maxlength="2000" @disabled(! $soloLectura)
+                                      rows="2" maxlength="2000"
+                                      @disabled($soloLectura || ! $preparado?->pivot->is_checked)
                                       placeholder="¿Qué incluye? Por ejemplo: PC, cuaderno, calculadora"
                                       @if ($soloLectura) readonly @endif
                             >{{ $preparado?->pivot->preparation_items_description }}</textarea>
@@ -295,7 +296,8 @@
                             <textarea class="form-control form-control-sm tf-check__detalle"
                                       id="reflexion-texto-{{ $pregunta->id }}"
                                       name="reflections[{{ $indice }}][answer]"
-                                      rows="2" maxlength="2000" @disabled(! $soloLectura)
+                                      rows="2" maxlength="2000"
+                                      @disabled($soloLectura || ! $respuesta?->is_checked)
                                       placeholder="Tu respuesta"
                                       @if ($soloLectura) readonly @endif
                             >{{ $respuesta?->answer }}</textarea>
@@ -313,6 +315,9 @@
                     </h3>
 
                     <p class="tf-ayuda">Voy a trabajar durante:</p>
+                    {{-- Conserva la identidad del bloque al editar para que el
+                         PUT lo actualice en lugar de crear uno nuevo. --}}
+                    <input type="hidden" name="action_blocks[0][id]" value="{{ $bloque?->id }}">
                     <div class="tf-opciones">
                         @foreach ($actionBlockDurations as $duracion)
                             <div class="form-check">
