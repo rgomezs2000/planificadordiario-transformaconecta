@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Filtros\Periodo;
 use App\Helpers\Helper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -179,8 +180,20 @@ class DailyPlan extends Model
         $energia = Helper::strip($filtros['energia'] ?? null);
         $fecha = Helper::toCarbon($filtros['fecha'] ?? null);
 
+        // Filtro por período: una semana, una quincena, un mes, un trimestre,
+        // un semestre, un año o un rango de fechas.
+        $periodo = Periodo::rango($filtros['periodo'] ?? null, $filtros);
+
         return $query
+            // Si se eligió un día concreto manda ese día; si no, el período.
             ->when($fecha, fn (Builder $q, mixed $dia) => $q->whereDate('plan_date', $dia->toDateString()))
+            ->when(
+                ! $fecha && $periodo,
+                fn (Builder $q) => $q->whereBetween('plan_date', [
+                    $periodo['inicio']->toDateString(),
+                    $periodo['fin']->toDateString(),
+                ])
+            )
             ->when(
                 $energia !== '',
                 fn (Builder $q) => $q->whereHas(
@@ -456,57 +469,51 @@ class DailyPlan extends Model
             'notes',
         ]);
 
+        $objetivos = $this->goals->keyBy('slot');
+        $objetivo = fn (int $slot): string => Helper::strip($objetivos->get($slot)?->description);
+
+        $preparativos = $this->preparationItems->sortBy(fn (PreparationItem $item) => $item->id);
+        $preguntas = $this->reflectionAnswers->sortBy(fn (ReflectionAnswer $r) => $r->question?->id ?? 0);
+        $bloques = $this->actionBlocks;
+
+        $siNo = fn (bool $marcado): string => $marcado ? 'Sí' : 'No';
+
         return [
+            // Se usa para el formato de fecha de la primera columna.
             'date' => $this->plan_date,
-            'day' => Helper::dayName($this->plan_date, capitalize: true),
-            'energy' => $this->energyLevel?->name,
 
-            // Antes de empezar: cada ítem con su marca y lo que se anotó.
-            'preparation' => $this->preparationItems
-                ->map(function (PreparationItem $item) {
-                    $detalle = Helper::strip($item->pivot->preparation_items_description);
+            // Las celdas, en el mismo orden que las columnas del reporte.
+            'cells' => [
+                Helper::dayName($this->plan_date, capitalize: true),
+                $this->energyLevel?->name,
 
-                    return ($item->pivot->is_checked ? '[X]' : '[ ]').' '.$item->name
-                        .($detalle !== '' ? ': '.$detalle : '');
-                })
-                ->implode("\n"),
+                // Mis 3 objetivos principales de hoy.
+                $objetivo(1),
+                $objetivo(2),
+                $objetivo(3),
 
-            // ¿Estoy procrastinando?: la pregunta marcada y su respuesta.
-            'procrastination' => $this->reflectionAnswers
-                ->map(function (ReflectionAnswer $respuesta) {
-                    $texto = ($respuesta->is_checked ? '[X]' : '[ ]').' '
-                        .Helper::strip($respuesta->question?->question);
-                    $respuestaTexto = Helper::strip($respuesta->answer);
+                // Antes de empezar: un Sí/No por ítem, en el orden del catálogo.
+                ...$preparativos->map(fn (PreparationItem $item) => $siNo((bool) $item->pivot->is_checked))->values()->all(),
 
-                    return $respuestaTexto !== '' ? $texto.' — '.$respuestaTexto : $texto;
-                })
-                ->implode("\n"),
+                // Si estoy procrastinando: un Sí/No por pregunta.
+                ...$preguntas->map(fn (ReflectionAnswer $r) => $siNo((bool) $r->is_checked))->values()->all(),
 
-            // Bloque de acción: cuánto tiempo, cómo terminó y en qué se trabajó.
-            'action_block' => $this->actionBlocks
-                ->map(function (ActionBlock $bloque) {
-                    $texto = implode(' · ', array_filter([
-                        $bloque->duration?->label,
-                        $bloque->outcome?->name,
-                    ]));
-                    $tarea = Helper::strip($bloque->task);
+                // Bloque de acción: el tiempo elegido, cómo terminó y en qué se trabajó.
+                $bloques->map(fn (ActionBlock $b) => $b->duration?->label)->filter()->implode("\n"),
+                $bloques->map(fn (ActionBlock $b) => $b->outcome?->name)->filter()->implode("\n"),
+                $bloques->map(fn (ActionBlock $b) => Helper::strip($b->task))->filter()->implode("\n"),
 
-                    return $tarea !== '' ? $texto."\n".$tarea : $texto;
-                })
-                ->implode("\n"),
+                // Cierre del día: cada pregunta en su propia columna.
+                Helper::strip($this->achievements),
+                Helper::strip($this->pending),
+                Helper::strip($this->pending_when),
+                Helper::strip($this->proud_of),
 
-            // Cierre del día: las cuatro preguntas de la hoja impresa.
-            'closure' => implode("\n", array_filter([
-                Helper::strip($this->achievements) !== '' ? 'Logré: '.Helper::strip($this->achievements) : null,
-                Helper::strip($this->pending) !== '' ? 'Pendiente: '.Helper::strip($this->pending) : null,
-                Helper::strip($this->pending_when) !== '' ? '¿Cuándo?: '.Helper::strip($this->pending_when) : null,
-                Helper::strip($this->proud_of) !== '' ? 'Orgulloso/a: '.Helper::strip($this->proud_of) : null,
-            ])),
-
-            'notes' => $this->notes
-                ->map(fn (PlanNote $nota) => Helper::strip($nota->content))
-                ->filter()
-                ->implode("\n"),
+                $this->notes
+                    ->map(fn (PlanNote $nota) => Helper::strip($nota->content))
+                    ->filter()
+                    ->implode("\n"),
+            ],
         ];
     }
 

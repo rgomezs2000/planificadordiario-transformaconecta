@@ -32,6 +32,10 @@ Route::prefix('diario')->name('diario.')->group(function () {
     // Reporte detallado en Excel, con los filtros del buscador
     Route::get('/reporte', [DailyPlanController::class, 'reporte'])->name('reporte');
 
+    // Resumen de desempeño en PDF: usa los mismos filtros que el listado.
+    // Con ?marca=1 sale como documento de muestra.
+    Route::get('/resumen', [DailyPlanController::class, 'resumen'])->name('resumen');
+
     // Guardar el día que envía el formulario
     Route::post('/', [DailyPlanController::class, 'store'])->name('store');
 

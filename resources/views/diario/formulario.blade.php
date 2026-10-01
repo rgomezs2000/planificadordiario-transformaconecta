@@ -98,7 +98,11 @@
                     <h3 class="tf-titulo">
                         <i class="bi bi-bullseye" aria-hidden="true"></i>
                         Mis 3 objetivos principales de hoy
-                        <span class="tf-obligatorio-tag">Obligatorio</span>
+                        {{-- El aviso de obligatorio sólo sirve mientras se completa el
+                             formulario: en modo lectura no se muestra. --}}
+                        @unless ($soloLectura)
+                            <span class="tf-obligatorio-tag">Obligatorio</span>
+                        @endunless
                     </h3>
 
                     @foreach ($goalTypes as $indice => $tipo)
@@ -141,7 +145,9 @@
                     <h3 class="tf-titulo">
                         <i class="bi bi-clock-history" aria-hidden="true"></i>
                         Mi horario de hoy
-                        <span class="tf-obligatorio-tag">Al menos una franja</span>
+                        @unless ($soloLectura)
+                            <span class="tf-obligatorio-tag">Al menos una franja</span>
+                        @endunless
                     </h3>
 
                     <table class="table tf-horario mb-2" id="tabla-horario">
@@ -358,7 +364,9 @@
                     <h3 class="tf-titulo">
                         <i class="bi bi-trophy" aria-hidden="true"></i>
                         Cierre del día
-                        <span class="tf-obligatorio-tag">Obligatorio</span>
+                        @unless ($soloLectura)
+                            <span class="tf-obligatorio-tag">Obligatorio</span>
+                        @endunless
                     </h3>
 
                     <label class="tf-etiqueta tf-obligatorio" for="achievements">Lo que logré hoy</label>
@@ -384,6 +392,9 @@
 
             </div>
         </div>
+
+        {{-- Línea de tiempo del día: se dibuja y se rehace sola con el horario --}}
+        @include('diario._grafico')
 
         {{-- ==================================================================
              ACCIONES
@@ -463,4 +474,7 @@
 
     {{-- Funciones de este formulario: fecha/día, filas, checks y guardado --}}
     <script src="{{ asset('js/script.js') }}"></script>
+
+    {{-- El gráfico del día: se dibuja solo y se rehace con cada cambio del horario --}}
+    <script src="{{ asset('js/grafico.js') }}"></script>
 @endpush

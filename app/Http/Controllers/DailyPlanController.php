@@ -3,10 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Excel\ReporteDiarioExport;
+use App\Filtros\Periodo;
+use App\Graficos\AgendaDelDia;
+use App\Graficos\AgendaPng;
 use App\Helpers\Helper;
 use App\Http\Controllers\Concerns\DatosDelFormulario;
 use App\Models\DailyPlan;
 use App\Models\EnergyLevel;
+use App\Models\ScheduleEntry;
+use App\Reportes\AnalisisDeDesempeno;
+use App\Reportes\GraficosDelResumen;
+use App\Reportes\RedaccionDelResumen;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Dompdf\Dompdf;
 use Illuminate\Http\JsonResponse;
@@ -56,11 +63,7 @@ class DailyPlanController extends Controller
     public function list(Request $request): JsonResponse
     {
         try {
-            $filtros = [
-                'fecha' => $request->query('fecha'),
-                'energia' => $request->query('energia'),
-                'palabra' => $request->query('palabra'),
-            ];
+            $filtros = $this->filtrosDeLaPeticion($request);
 
             $plans = DailyPlan::allForList($filtros);
 
@@ -243,6 +246,153 @@ class DailyPlanController extends Controller
         }
     }
 
+    /**
+     * Los filtros del buscador que llegan por la dirección.
+     *
+     * Se leen en un solo lugar porque los usan tanto la tabla como el reporte:
+     * así los dos filtran exactamente lo mismo.
+     *
+     * @return array<string, mixed>
+     */
+    private function filtrosDeLaPeticion(Request $request): array
+    {
+        return [
+            'fecha' => $request->query('fecha'),
+            'energia' => $request->query('energia'),
+            'palabra' => $request->query('palabra'),
+            // Filtro por período: el tipo y lo que se eligió para ese tipo.
+            'periodo' => $request->query('periodo'),
+            'semana' => $request->query('semana'),
+            'mes' => $request->query('mes'),
+            'mitad' => $request->query('mitad'),
+            'anio' => $request->query('anio'),
+            'trimestre' => $request->query('trimestre'),
+            'semestre' => $request->query('semestre'),
+            'desde' => $request->query('desde'),
+            'hasta' => $request->query('hasta'),
+        ];
+    }
+
+    /* ======================================================================
+     |  Resumen de desempeño
+     ====================================================================== */
+
+    /**
+     * Resumen de desempeño en PDF.
+     *
+     * Usa los mismos filtros que la tabla y el reporte detallado, así el
+     * documento habla exactamente de lo que se está viendo en pantalla. Con
+     * ?marca=1 sale con la marca de agua de muestra, igual que el PDF del día.
+     */
+    public function resumen(Request $request)
+    {
+        try {
+            $filtros = $this->filtrosDeLaPeticion($request);
+            $plans = DailyPlan::forReport($filtros);
+
+            if ($plans->isEmpty()) {
+                return $this->jsonError(
+                    'No hay diarios que coincidan con la búsqueda, así que no hay resumen que generar.',
+                    [],
+                    404
+                );
+            }
+
+            $analisis = AnalisisDeDesempeno::de($plans, $this->alcanceDelResumen($filtros));
+            $marca = $request->boolean('marca');
+
+            $html = view('diario.resumen', [
+                'analisis' => $analisis,
+                'textos' => RedaccionDelResumen::observaciones($analisis),
+                'titulos' => RedaccionDelResumen::titulos(),
+                'marca' => $marca,
+                'graficos' => [
+                    'procrastinacion' => GraficosDelResumen::dataUri(
+                        GraficosDelResumen::performanceVsProcrastinacion($analisis)
+                    ),
+                    'dias' => GraficosDelResumen::dataUri(GraficosDelResumen::rendimientoPorDia($analisis)),
+                    'energia' => GraficosDelResumen::dataUri(GraficosDelResumen::rendimientoPorEnergia($analisis)),
+                ],
+                // Con un solo día también va la línea de tiempo de ese día.
+                'agenda' => $plans->count() === 1 ? $this->agendaDelResumen($plans->first()) : null,
+            ])->render();
+
+            $dompdf = Pdf::loadHTML($html)->setPaper('letter')->getDomPDF();
+            $dompdf->render();
+
+            if ($marca) {
+                $this->marcarComoMuestra($dompdf);
+            }
+
+            return response($dompdf->output(), 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$this->resumenFileName($analisis, $marca).'"',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma' => 'no-cache',
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo generar el resumen. Intenta de nuevo.', [], 500);
+        }
+    }
+
+    /** La línea de tiempo de un solo día, para el resumen. */
+    private function agendaDelResumen(DailyPlan $plan): string
+    {
+        return AgendaPng::dataUri(AgendaDelDia::datos(
+            $plan->scheduleEntries->map(fn (ScheduleEntry $franja) => [
+                'start_time' => $franja->start_time,
+                'activity' => $franja->activity,
+                'is_done' => (bool) $franja->is_done,
+            ])->all()
+        ));
+    }
+
+    /** Cómo se llama el archivo, según lo que cubra. */
+    private function resumenFileName(array $analisis, bool $marca): string
+    {
+        $partes = ['resumen-desempeno'];
+
+        if ($analisis['desde']) {
+            $partes[] = $analisis['desde'];
+        }
+
+        if ($analisis['hasta'] && $analisis['hasta'] !== $analisis['desde']) {
+            $partes[] = $analisis['hasta'];
+        }
+
+        if ($marca) {
+            $partes[] = 'muestra';
+        }
+
+        return implode('-', $partes).'.pdf';
+    }
+
+    /** Describe en palabras qué filtros se aplicaron. */
+    private function alcanceDelResumen(array $filtros): string
+    {
+        $partes = [];
+
+        if (($palabra = Helper::strip($filtros['palabra'] ?? null)) !== '') {
+            $partes[] = 'búsqueda por "'.$palabra.'"';
+        }
+
+        if (($fecha = Helper::toCarbon($filtros['fecha'] ?? null)) !== null) {
+            $partes[] = 'el día '.Helper::longDate($fecha, withWeekday: true);
+        }
+
+        if (($energia = Helper::strip($filtros['energia'] ?? null)) !== '') {
+            $partes[] = 'energía '.$energia;
+        }
+
+        if (($rango = Periodo::rango($filtros['periodo'] ?? null, $filtros)) !== null) {
+            $partes[] = 'el período '.$rango['etiqueta'];
+        }
+
+        return $partes === [] ? 'Todos los diarios' : ucfirst(implode(', ', $partes));
+    }
+
     /* ======================================================================
      |  Imprimir
      ====================================================================== */
@@ -269,6 +419,15 @@ class DailyPlanController extends Controller
             $html = view('diario.pdf', [
                 'plan' => $plan,
                 'marca' => $marca,
+                // El gráfico del día, dibujado en el servidor: el PDF no ejecuta
+                // JavaScript, así que viaja como imagen ya hecha.
+                'grafico' => AgendaPng::dataUri(AgendaDelDia::datos(
+                    $plan->scheduleEntries->map(fn (ScheduleEntry $franja) => [
+                        'start_time' => $franja->start_time,
+                        'activity' => $franja->activity,
+                        'is_done' => (bool) $franja->is_done,
+                    ])->all()
+                )),
             ])->render();
 
             $dompdf = Pdf::loadHTML($html)->setPaper('letter')->getDomPDF();
@@ -308,11 +467,7 @@ class DailyPlanController extends Controller
     public function reporte(Request $request)
     {
         try {
-            $filtros = [
-                'fecha' => $request->query('fecha'),
-                'energia' => $request->query('energia'),
-                'palabra' => $request->query('palabra'),
-            ];
+            $filtros = $this->filtrosDeLaPeticion($request);
 
             $plans = DailyPlan::forReport($filtros);
 

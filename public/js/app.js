@@ -643,6 +643,11 @@ window.Planificador = window.Planificador || {};
             P.Impresion.iniciar();
         }
 
+        // El gráfico del día, en las pantallas del formulario.
+        if (P.Grafico) {
+            P.Grafico.iniciar();
+        }
+
         // Las tablas marcadas con data-tabla="1" se inicializan solas.
         if ($.fn.DataTable) {
             $('table[data-tabla="1"]').each(function () {

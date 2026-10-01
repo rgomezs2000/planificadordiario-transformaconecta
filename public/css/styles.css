@@ -1693,19 +1693,22 @@ textarea.form-control {
     appearance: none;
 }
 
-/* 6. Botones de opción que son etiqueta (energía, día): también sus estados. */
-.btn-check:disabled + .tf-energia__boton,
-.btn-check:disabled + .tf-dia__letra {
+/* 6. Botones de opción que son etiqueta (energía y día): también sus estados.
+   Los que NO están elegidos y están bloqueados van en gris. Los elegidos
+   conservan su color: la energía el suyo (baja, media o alta), igual que al
+   crear o modificar, y el día va en azul, que es como se marca el día que le
+   corresponde a la fecha. */
+.btn-check:not(:checked):disabled + .tf-energia__boton,
+.btn-check:not(:checked):disabled + .tf-dia__letra {
     border-color: var(--tc-gris-200);
     background-color: var(--tc-gris-100);
     color: var(--tc-gris-500);
     cursor: not-allowed;
 }
 
-.btn-check:checked:disabled + .tf-energia__boton,
 .btn-check:checked:disabled + .tf-dia__letra {
-    border-color: var(--tc-gris-300);
-    background-color: var(--tc-gris-300);
+    border-color: var(--tc-azul);
+    background: var(--tc-azul);
     color: var(--tc-blanco);
 }
 
@@ -1715,6 +1718,93 @@ textarea.form-control {
 .form-check-input.is-invalid {
     border-color: var(--tc-rojo);
     box-shadow: 0 0 0 0.2rem rgba(217, 11, 11, 0.14);
+}
+
+/* --- Campos del filtro por período --------------------------------------
+   Se muestra sólo el campo del tipo elegido (semana, mes, año, rango…). El
+   [hidden] lleva !important porque si no lo gana el display de la regla. */
+.tf-filtros__campo {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.tf-filtros__campo[hidden] {
+    display: none !important;
+}
+
+.tf-filtros__campo .form-control,
+.tf-filtros__campo .form-select {
+    width: auto;
+    min-width: 10.5rem;
+}
+
+/* El selector del tipo de período no necesita todo el ancho. */
+.tf-filtros__linea > .form-select {
+    max-width: 22rem;
+}
+
+/* --- Gráfico del día: línea de tiempo de las actividades --- */
+.tf-grafico {
+    position: relative;
+    width: 100%;
+    padding: 0.5rem 0.25rem 0;
+    overflow-x: auto;
+}
+
+.tf-grafico svg {
+    display: block;
+    width: 100%;
+    min-width: 34rem;
+    height: auto;
+}
+
+/* El aviso que aparece al señalar una barra: un cuadro de dos renglones, con
+   la franja horaria arriba y la actividad abajo. Va fijo a la ventana para que
+   no lo recorte el desplazamiento del gráfico. */
+.tf-grafico__aviso {
+    position: fixed;
+    z-index: 1080;
+    transform: translate(-50%, -118%);
+    padding: 0.45rem 0.8rem;
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: var(--tc-sombra-alta);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--tc-transicion);
+}
+
+.tf-grafico__aviso strong {
+    display: block;
+    font-size: 0.86rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.tf-grafico__aviso span {
+    display: block;
+    font-weight: 500;
+}
+
+.tf-grafico__aviso--visible {
+    opacity: 1;
+}
+
+.tf-grafico__zona {
+    cursor: pointer;
+}
+
+.tf-grafico__ayuda {
+    margin: 0.35rem 0 0;
+    color: var(--tc-gris-500);
+    font-size: 0.75rem;
 }
 
 /* ==========================================================================

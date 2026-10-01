@@ -44,6 +44,7 @@
                         <option value="todos">Todos los diarios</option>
                         <option value="fecha">Fecha</option>
                         <option value="energia">Energía</option>
+                        <option value="periodo">Período</option>
                     </select>
                 </div>
 
@@ -84,6 +85,87 @@
                     </div>
 
                     <p class="tf-filtros__ayuda">Vuelve a pulsar el mismo para quitarlo.</p>
+                </div>
+
+                {{-- Período: se elige el tipo y sólo se muestran sus campos.
+                     Acá no va el día de la semana: el período abarca fechas
+                     completas (la semana va de lunes a domingo). --}}
+                <div class="tf-filtros__grupo tf-filtros__grupo--ancho" data-tf-panel="periodo" hidden>
+                    <label class="tf-etiqueta" for="filtro-periodo-tipo">Período</label>
+
+                    <div class="tf-filtros__linea">
+                        <select class="form-select form-select-sm" id="filtro-periodo-tipo" data-tf-periodo-tipo>
+                            <option value="semana">Semanal · elegir semana</option>
+                            <option value="quincena">Quincenal · elegir quincena</option>
+                            <option value="mes">Mensual · elegir mes</option>
+                            <option value="trimestre">Trimestral · elegir trimestre</option>
+                            <option value="semestre">Semestral · elegir semestre</option>
+                            <option value="anio">Anual · elegir año</option>
+                            <option value="rango">Rango de fechas · desde y hasta</option>
+                        </select>
+
+                        {{-- Una semana del calendario (el navegador la da como 2026-W40). --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="semana" hidden>
+                            <input type="week" class="form-control form-control-sm" data-tf-campo="semana"
+                                   aria-label="Semana del año">
+                        </span>
+
+                        {{-- Quincena: el mes y cuál de las dos mitades. --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="quincena" hidden>
+                            <input type="month" class="form-control form-control-sm" data-tf-campo="mes"
+                                   aria-label="Mes de la quincena">
+                            <select class="form-select form-select-sm" data-tf-campo="mitad" aria-label="Quincena">
+                                <option value="1">Primera quincena · del 1 al 15</option>
+                                <option value="2">Segunda quincena · del 16 al fin</option>
+                            </select>
+                        </span>
+
+                        {{-- Mes completo (el navegador lo da como 2026-09). --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="mes" hidden>
+                            <input type="month" class="form-control form-control-sm" data-tf-campo="mes"
+                                   aria-label="Mes">
+                        </span>
+
+                        {{-- Trimestre: el año y cuál de los cuatro. --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="trimestre" hidden>
+                            <input type="number" class="form-control form-control-sm" data-tf-campo="anio"
+                                   min="1900" max="2200" step="1" placeholder="Año" aria-label="Año del trimestre">
+                            <select class="form-select form-select-sm" data-tf-campo="trimestre" aria-label="Trimestre">
+                                <option value="1">Primero · enero a marzo</option>
+                                <option value="2">Segundo · abril a junio</option>
+                                <option value="3">Tercero · julio a septiembre</option>
+                                <option value="4">Cuarto · octubre a diciembre</option>
+                            </select>
+                        </span>
+
+                        {{-- Semestre: el año y cuál de los dos. --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="semestre" hidden>
+                            <input type="number" class="form-control form-control-sm" data-tf-campo="anio"
+                                   min="1900" max="2200" step="1" placeholder="Año" aria-label="Año del semestre">
+                            <select class="form-select form-select-sm" data-tf-campo="semestre" aria-label="Semestre">
+                                <option value="1">Primero · enero a junio</option>
+                                <option value="2">Segundo · julio a diciembre</option>
+                            </select>
+                        </span>
+
+                        {{-- Año completo. --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="anio" hidden>
+                            <input type="number" class="form-control form-control-sm" data-tf-campo="anio"
+                                   min="1900" max="2200" step="1" placeholder="Año" aria-label="Año">
+                        </span>
+
+                        {{-- Rango elegido a mano. --}}
+                        <span class="tf-filtros__campo" data-tf-periodo="rango" hidden>
+                            <input type="text" class="form-control form-control-sm" data-tf-campo="desde"
+                                   placeholder="Desde dd/mm/aaaa" autocomplete="off" aria-label="Fecha desde">
+                            <input type="text" class="form-control form-control-sm" data-tf-campo="hasta"
+                                   placeholder="Hasta dd/mm/aaaa" autocomplete="off" aria-label="Fecha hasta">
+                        </span>
+                    </div>
+
+                    <p class="tf-filtros__ayuda">
+                        Se aplica solo al elegirlo. Las semanas van de lunes a domingo.
+                    </p>
                 </div>
             </div>
         </div>
@@ -138,16 +220,16 @@
         </table>
     </section>
 
-    {{-- Sólo queda deshabilitado "Generar resumen". Cuando se active, basta con
-         quitarle el atributo disabled. --}}
+    {{-- Los dos reportes: el detallado en Excel y el resumen de desempeño en PDF.
+         El resumen abre su modal para elegir si es documento de muestra o real. --}}
     <div class="tf-acciones">
         <button type="button" class="tc-boton tc-boton--azul" data-tf-reporte>
             <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
             Generar reporte detallado
         </button>
 
-        <button type="button" class="tc-boton tc-boton--turquesa" disabled
-                title="Disponible próximamente">
+        <button type="button" class="tc-boton tc-boton--turquesa" data-tf-resumen
+                title="Resumen de desempeño en PDF, con los filtros aplicados">
             <i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i>
             Generar resumen
         </button>
@@ -159,6 +241,7 @@
     </div>
 
     @include('diario._modal_imprimir')
+    @include('diario._modal_resumen')
 
 @endsection
 
@@ -396,26 +479,86 @@
 
                     $panel.prop('hidden', elegido !== nombre && ! filtros[nombre]);
                 });
+
+                pintarPeriodo();
+            }
+
+            /** Dentro de período se ve sólo el campo del tipo elegido. */
+            function pintarPeriodo() {
+                var tipo = $filtros.find('[data-tf-periodo-tipo]').val();
+
+                $filtros.find('[data-tf-periodo]').each(function () {
+                    $(this).prop('hidden', $(this).attr('data-tf-periodo') !== tipo);
+                });
+            }
+
+            /**
+             * Lo que se le manda al servidor según el período elegido.
+             *
+             * Los campos se leen sólo del bloque visible, así el mes de la
+             * quincena no se confunde con el del mes completo. Un período a
+             * medio llenar no filtra: se devuelve vacío.
+             */
+            function leerPeriodo() {
+                var tipo = $filtros.find('[data-tf-periodo-tipo]').val();
+                var $bloque = $filtros.find('[data-tf-periodo="' + tipo + '"]');
+
+                if (! tipo || ! $bloque.length) {
+                    return {};
+                }
+
+                var datos = { periodo: tipo };
+
+                $bloque.find('[data-tf-campo]').each(function () {
+                    datos[$(this).attr('data-tf-campo')] = $.trim($(this).val() || '');
+                });
+
+                var requeridos = {
+                    semana: ['semana'], quincena: ['mes'], mes: ['mes'], anio: ['anio'],
+                    trimestre: ['anio'], semestre: ['anio'], rango: ['desde', 'hasta']
+                };
+                var completo = true;
+
+                $.each(requeridos[tipo] || [], function (indice, campo) {
+                    if (! datos[campo]) {
+                        completo = false;
+                    }
+                });
+
+                return completo ? datos : {};
+            }
+
+            /** ¿Los dos juegos de filtros son el mismo? */
+            function filtrosIguales(uno, otro) {
+                var claves = ['fecha', 'energia', 'palabra', 'periodo', 'semana', 'mes', 'mitad',
+                    'anio', 'trimestre', 'semestre', 'desde', 'hasta'];
+
+                for (var i = 0; i < claves.length; i++) {
+                    if ((uno[claves[i]] || '') !== (otro[claves[i]] || '')) {
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             /**
              * Toma lo que hay en el buscador y vuelve a pedir la tabla.
-             * No hay botón: la palabra clave, la fecha y la energía se aplican
-             * solas en cuanto cambian.
+             * No hay botón: la palabra clave, la fecha, la energía y el período
+             * se aplican solos en cuanto cambian.
              */
             function aplicar() {
-                var nuevos = {
+                var nuevos = $.extend({
                     fecha: $.trim($filtros.find('[data-tf-filtro-fecha]').val()),
                     energia: $filtros.find('[data-tf-filtro-energia]:checked').val() || '',
-                    palabra: $.trim($filtros.find('[data-tf-filtro-palabra]').val())
-                };
+                    palabra: $.trim($filtros.find('[data-tf-filtro-palabra]').val()),
+                    periodo: '', semana: '', mes: '', mitad: '',
+                    anio: '', trimestre: '', semestre: '', desde: '', hasta: ''
+                }, leerPeriodo());
 
                 // Si es exactamente lo mismo que ya se está mostrando, no se
                 // pide de nuevo: así no se cancelan peticiones sin motivo.
-                var repetida = ultimaBusqueda !== null &&
-                    nuevos.fecha === ultimaBusqueda.fecha &&
-                    nuevos.energia === ultimaBusqueda.energia &&
-                    nuevos.palabra === ultimaBusqueda.palabra;
+                var repetida = ultimaBusqueda !== null && filtrosIguales(nuevos, ultimaBusqueda);
 
                 filtros = nuevos;
                 pintarPaneles();
@@ -424,9 +567,17 @@
                     return;
                 }
 
-                ultimaBusqueda = { fecha: nuevos.fecha, energia: nuevos.energia, palabra: nuevos.palabra };
+                ultimaBusqueda = $.extend({}, nuevos);
                 tabla.ajax.reload();
             }
+
+            /**
+             * Los filtros que están aplicados ahora mismo. El resumen los usa
+             * para armar su dirección con lo mismo que muestra la tabla.
+             */
+            P.filtrosDelListado = function () {
+                return filtros;
+            };
 
             /** Aplica con una pequeña espera, para no pedir en cada tecla. */
             function aplicarAlEscribir() {
@@ -438,19 +589,33 @@
             function limpiar() {
                 window.clearTimeout(espera);
 
-                filtros = { fecha: '', energia: '', palabra: '' };
+                filtros = { fecha: '', energia: '', palabra: '', periodo: '' };
                 // Se olvida lo buscado: la próxima búsqueda se hace siempre.
-                ultimaBusqueda = { fecha: '', energia: '', palabra: '' };
+                ultimaBusqueda = { fecha: '', energia: '', palabra: '', periodo: '' };
 
                 $filtros.find('[data-tf-filtro-por]').val('todos');
                 $filtros.find('[data-tf-filtro-fecha]').val('');
                 $filtros.find('[data-tf-filtro-palabra]').val('');
                 $filtros.find('[data-tf-filtro-energia]').prop('checked', false);
+                // El período vuelve a su primera opción y sin valores.
+                $filtros.find('[data-tf-periodo-tipo]').val('semana');
+                $filtros.find('[data-tf-campo]').val('');
 
                 marcarDia('');
                 pintarPaneles();
                 tabla.ajax.reload();
             }
+
+            // Los dos campos del rango usan el mismo calendario en dd/mm/aaaa.
+            $filtros.find('[data-tf-periodo="rango"] [data-tf-campo]').datepicker({
+                format: 'dd/mm/yyyy',
+                language: 'es',
+                autoclose: true,
+                todayHighlight: true,
+                orientation: 'bottom auto'
+            }).on('change changeDate', function () {
+                aplicar();
+            });
 
             // Calendario en dd/mm/aaaa, igual que el del formulario.
             $filtros.find('[data-tf-filtro-fecha]').datepicker({
@@ -477,6 +642,16 @@
             });
 
             $filtros.on('change', '[data-tf-filtro-por]', pintarPaneles);
+
+            // Período: al cambiar el tipo se muestran sus campos y se aplica;
+            // al cambiar cualquier campo, se aplica solo.
+            $filtros.on('change', '[data-tf-periodo-tipo]', function () {
+                pintarPeriodo();
+                aplicar();
+            });
+
+            $filtros.on('change', '[data-tf-campo]', aplicar);
+            $filtros.on('input', '[data-tf-campo]', aplicarAlEscribir);
 
             // Elegir una energía la aplica sola.
             $filtros.on('change', '[data-tf-filtro-energia]', function () {
@@ -506,6 +681,36 @@
 
             // Reporte detallado en Excel: se genera con los filtros que estén
             // puestos, así el archivo trae lo mismo que se ve en la tabla.
+            // El resumen de desempeño: primero se elige en el modal si el PDF
+            // lleva la marca de muestra, y recién ahí se genera, con los filtros
+            // que están aplicados en el buscador.
+            var modalResumen = new bootstrap.Modal(document.getElementById('modalResumen'));
+
+            $('[data-tf-resumen]').on('click', function () {
+                modalResumen.show();
+            });
+
+            $('#resumen-generar').on('click', function () {
+                var partes = [];
+
+                $.each(P.filtrosDelListado ? P.filtrosDelListado() : {}, function (clave, valor) {
+                    if (valor) {
+                        partes.push(encodeURIComponent(clave) + '=' + encodeURIComponent(valor));
+                    }
+                });
+
+                if ($('#resumen-marca').is(':checked')) {
+                    partes.push('marca=1');
+                }
+
+                window.open(
+                    $('#modalResumen').data('url-resumen') + (partes.length ? '?' + partes.join('&') : ''),
+                    '_blank'
+                );
+
+                modalResumen.hide();
+            });
+
             $('[data-tf-reporte]').on('click', function () {
                 if (! P.Reporte) {
                     return;

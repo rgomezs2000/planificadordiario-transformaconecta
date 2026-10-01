@@ -52,19 +52,49 @@ class ReporteDiarioExport
     /**
      * Las columnas del reporte.
      *
-     * El color de cada encabezado es el de su sección en la hoja impresa:
-     * azul oscuro para los datos del día, turquesa para "antes de empezar",
-     * naranja para la procrastinación, turquesa oscuro para el bloque de
-     * acción, rojo para el cierre y azul para las notas.
+     * Cada sección de la hoja impresa tiene su color, y las que antes eran una
+     * sola celda con todo adentro ahora van separadas: los tres objetivos, un
+     * Sí/No por ítem del "antes de empezar", un Sí/No por pregunta de la
+     * procrastinación, el bloque de acción partido en tres y el cierre en
+     * cuatro. El orden de esta lista es el orden de las celdas que devuelve
+     * DailyPlan::toReportArray().
      */
     public const COLUMNAS = [
         ['titulo' => 'Fecha', 'color' => self::AZUL_OSCURO, 'ancho' => 12],
         ['titulo' => 'Día', 'color' => self::AZUL_OSCURO, 'ancho' => 11],
         ['titulo' => 'Energía', 'color' => self::AZUL_OSCURO, 'ancho' => 10],
-        ['titulo' => 'Antes de empezar', 'color' => self::TURQUESA, 'ancho' => 40],
-        ['titulo' => '¿Estoy procrastinando?', 'color' => self::NARANJA, 'ancho' => 40],
-        ['titulo' => 'Bloque de acción', 'color' => self::TURQUESA_OSCURO, 'ancho' => 28],
-        ['titulo' => 'Cierre del día', 'color' => self::ROJO, 'ancho' => 42],
+
+        // Mis 3 objetivos principales de hoy.
+        ['titulo' => 'Debo hacer', 'color' => self::NARANJA, 'ancho' => 34],
+        ['titulo' => 'Quiero hacer', 'color' => self::NARANJA, 'ancho' => 34],
+        ['titulo' => 'Algo para mí', 'color' => self::NARANJA, 'ancho' => 34],
+
+        // Antes de empezar: un Sí/No por ítem.
+        ['titulo' => 'Materiales', 'color' => self::TURQUESA, 'ancho' => 13],
+        ['titulo' => 'Ropa adecuada', 'color' => self::TURQUESA, 'ancho' => 13],
+        ['titulo' => 'Alimentación', 'color' => self::TURQUESA, 'ancho' => 13],
+        ['titulo' => 'Cargar dispositivos', 'color' => self::TURQUESA, 'ancho' => 13],
+        ['titulo' => 'Espacio organizado', 'color' => self::TURQUESA, 'ancho' => 13],
+        ['titulo' => 'Todo lo necesario', 'color' => self::TURQUESA, 'ancho' => 13],
+
+        // Si estoy procrastinando: un Sí/No por pregunta.
+        ['titulo' => '¿Qué estoy evitando?', 'color' => self::NARANJA, 'ancho' => 15],
+        ['titulo' => '¿Por qué lo estoy postergando?', 'color' => self::NARANJA, 'ancho' => 15],
+        ['titulo' => '¿Qué me está distrayendo?', 'color' => self::NARANJA, 'ancho' => 15],
+        ['titulo' => '¿Necesito desglosarlo?', 'color' => self::NARANJA, 'ancho' => 15],
+        ['titulo' => '¿Qué puedo hacer en 5 minutos?', 'color' => self::NARANJA, 'ancho' => 15],
+
+        // Bloque de acción.
+        ['titulo' => 'Voy a trabajar durante', 'color' => self::TURQUESA_OSCURO, 'ancho' => 18],
+        ['titulo' => 'Cuando termine este bloque', 'color' => self::TURQUESA_OSCURO, 'ancho' => 20],
+        ['titulo' => '¿En qué vas a trabajar?', 'color' => self::TURQUESA_OSCURO, 'ancho' => 34],
+
+        // Cierre del día.
+        ['titulo' => 'Logré', 'color' => self::ROJO, 'ancho' => 40],
+        ['titulo' => 'Pendiente', 'color' => self::ROJO, 'ancho' => 40],
+        ['titulo' => '¿Cuándo lo haré?', 'color' => self::ROJO, 'ancho' => 18],
+        ['titulo' => 'Orgulloso/a de mí', 'color' => self::ROJO, 'ancho' => 40],
+
         ['titulo' => 'Notas / recordatorios', 'color' => self::AZUL, 'ancho' => 34],
     ];
 
@@ -156,13 +186,11 @@ class ReporteDiarioExport
             $hoja->setCellValue('A'.$fila, FechaExcel::PHPToExcel($datos['date']));
             $hoja->getStyle('A'.$fila)->getNumberFormat()->setFormatCode('DD/MM/YYYY');
 
-            $hoja->setCellValue('B'.$fila, (string) $datos['day']);
-            $hoja->setCellValue('C'.$fila, (string) $datos['energy']);
-            $hoja->setCellValue('D'.$fila, $datos['preparation']);
-            $hoja->setCellValue('E'.$fila, $datos['procrastination']);
-            $hoja->setCellValue('F'.$fila, $datos['action_block']);
-            $hoja->setCellValue('G'.$fila, $datos['closure']);
-            $hoja->setCellValue('H'.$fila, $datos['notes']);
+            // Las demás celdas siguen el orden de las columnas: la primera ya
+            // es la fecha, así que se empieza desde la segunda.
+            foreach (array_values($datos['cells']) as $posicion => $valor) {
+                $hoja->setCellValue(self::letra($posicion + 2).$fila, $valor);
+            }
 
             $rango = 'A'.$fila.':'.$ultimaColumna.$fila;
 
@@ -259,18 +287,12 @@ class ReporteDiarioExport
      */
     private static function alturaDeFila(array $datos): float
     {
-        $textos = [
-            $datos['preparation'],
-            $datos['procrastination'],
-            $datos['action_block'],
-            $datos['closure'],
-            $datos['notes'],
-        ];
-
         $filas = 1;
 
-        foreach ($textos as $indice => $texto) {
-            $ancho = self::COLUMNAS[$indice + 3]['ancho'];
+        // Las celdas vienen en el mismo orden que las columnas, así que el
+        // ancho de cada una se busca por su posición.
+        foreach (array_values($datos['cells'] ?? []) as $indice => $texto) {
+            $ancho = self::COLUMNAS[$indice]['ancho'] ?? 20;
             $lineas = 0;
 
             foreach (explode("\n", (string) $texto) as $linea) {

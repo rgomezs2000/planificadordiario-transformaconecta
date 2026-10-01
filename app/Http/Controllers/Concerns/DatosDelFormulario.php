@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Graficos\AgendaDelDia;
 use App\Helpers\Helper;
 use App\Models\ActionBlockDuration;
 use App\Models\ActionBlockOutcome;
@@ -10,6 +11,7 @@ use App\Models\EnergyLevel;
 use App\Models\GoalType;
 use App\Models\PreparationItem;
 use App\Models\ReflectionQuestion;
+use App\Models\ScheduleEntry;
 
 /**
  * Datos que necesita la vista del formulario del diario.
@@ -75,6 +77,17 @@ trait DatosDelFormulario
                 : route('diario.store'),
             'metodo' => $modo === 'editar' ? 'PUT' : 'POST',
             'indiceHorario' => $plan ? $plan->scheduleEntries->count() : 0,
+            // Los tramos del gráfico del día. Es la misma estructura que viaja
+            // al guardar, así el gráfico y la base hablan del mismo objeto.
+            'grafico' => AgendaDelDia::datos(
+                $plan
+                    ? $plan->scheduleEntries->map(fn (ScheduleEntry $franja) => [
+                        'start_time' => $franja->start_time,
+                        'activity' => $franja->activity,
+                        'is_done' => (bool) $franja->is_done,
+                    ])->all()
+                    : []
+            ),
         ]);
     }
 }

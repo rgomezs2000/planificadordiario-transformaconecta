@@ -538,6 +538,24 @@
     </tr>
 </table>
 
+{{-- ====================== GRÁFICO DEL DÍA ========================== --}}
+{{-- El PDF no ejecuta JavaScript: el gráfico llega ya dibujado como imagen. --}}
+<table class="seccion">
+    <tr>
+        <td class="titulo-seccion turquesa">MI DÍA EN EL TIEMPO</td>
+    </tr>
+    <tr>
+        <td class="cuerpo">
+            @if ($plan->scheduleEntries->isEmpty())
+                <span class="sin-dato">Sin franjas de horario para graficar.</span>
+            @else
+                <img src="{{ $grafico }}" alt="Línea de tiempo de las actividades del día"
+                     style="width: 100%; height: auto;">
+            @endif
+        </td>
+    </tr>
+</table>
+
 {{-- ============================== PIE =============================== --}}
 <div class="pie">
     <strong>MI PLANIFICADOR DIARIO</strong> · ORGÁNIZATE · ACTÚA · AVANZA<br>
