@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Excel\ReporteDiarioExport;
 use App\Helpers\Helper;
 use App\Http\Controllers\Concerns\DatosDelFormulario;
 use App\Models\DailyPlan;
+use App\Models\EnergyLevel;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Dompdf\Dompdf;
 use Illuminate\Http\JsonResponse;
@@ -37,18 +39,40 @@ class DailyPlanController extends Controller
      */
     public function index()
     {
-        return view('diario.index');
+        return view('diario.index', [
+            // Catálogos del miniformulario de filtros que va debajo de la tabla.
+            'energyLevels' => EnergyLevel::active()->get(),
+            'weekDays' => $this->weekDays(),
+        ]);
     }
 
-    /** Todos los días registrados en JSON (GET). */
-    public function list(): JsonResponse
+    /**
+     * Todos los días registrados en JSON (GET).
+     *
+     * Acepta los filtros del miniformulario, que viajan como parámetros de la
+     * dirección: fecha (dd/mm/aaaa), energia (baja, media o alta) y palabra
+     * (basta con una letra). Se pueden combinar entre sí.
+     */
+    public function list(Request $request): JsonResponse
     {
         try {
-            $plans = DailyPlan::allForList();
+            $filtros = [
+                'fecha' => $request->query('fecha'),
+                'energia' => $request->query('energia'),
+                'palabra' => $request->query('palabra'),
+            ];
+
+            $plans = DailyPlan::allForList($filtros);
 
             return $this->jsonSuccess([
                 'plans' => $plans->map->toListArray()->all(),
                 'total' => $plans->count(),
+                // Se devuelven los filtros que realmente se aplicaron, para que
+                // el navegador pueda avisar qué se está mostrando.
+                'filtros' => array_filter(
+                    $filtros,
+                    fn (mixed $valor) => Helper::strip($valor) !== ''
+                ),
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -102,6 +126,29 @@ class DailyPlanController extends Controller
             return redirect()
                 ->route('diario.listado')
                 ->with('error', 'No se pudo abrir el diario para modificarlo.');
+        }
+    }
+
+    /**
+     * Un día en JSON (GET).
+     *
+     * Lo usa el flujo de impresión para comprobar que el diario existe antes de
+     * generar el PDF, así el aviso sale en una alerta y no en una pestaña nueva.
+     */
+    public function detail(int $dailyPlan): JsonResponse
+    {
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+
+            if (! $plan) {
+                return $this->jsonError('El diario que buscas no existe.', [], 404);
+            }
+
+            return $this->jsonSuccess(['plan' => $plan->toDetailArray()]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo consultar el diario.', [], 500);
         }
     }
 
@@ -231,9 +278,13 @@ class DailyPlanController extends Controller
                 $this->marcarComoMuestra($dompdf);
             }
 
+            // Sin caché: el PDF se pide siempre con la misma dirección, y si el
+            // navegador lo guardara mostraría la versión anterior del diario.
             return response($dompdf->output(), 200, [
                 'Content-Type' => 'application/pdf',
                 'Content-Disposition' => 'inline; filename="'.$this->pdfFileName($plan, $marca).'"',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma' => 'no-cache',
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -243,26 +294,115 @@ class DailyPlanController extends Controller
     }
 
     /**
-     * Marca de agua diagonal SPECIMEN sobre todas las páginas.
+     * Reporte detallado en Excel (.xlsx) · GET.
      *
-     * Se dibuja con el lienzo de dompdf porque el PDF no admite rotar texto
-     * con CSS.
+     * Sale con los mismos filtros del buscador, así el archivo trae exactamente
+     * los diarios que se están viendo en la tabla. Un diario por fila, con la
+     * fecha, la energía, el "antes de empezar", las preguntas de
+     * procrastinación, el bloque de acción, el cierre del día y las notas.
+     *
+     * Si no hay diarios que coincidan contesta en JSON con el aviso, para que
+     * el navegador lo muestre en una alerta en vez de descargar un archivo
+     * vacío.
+     */
+    public function reporte(Request $request)
+    {
+        try {
+            $filtros = [
+                'fecha' => $request->query('fecha'),
+                'energia' => $request->query('energia'),
+                'palabra' => $request->query('palabra'),
+            ];
+
+            $plans = DailyPlan::forReport($filtros);
+
+            if ($plans->isEmpty()) {
+                return $this->jsonError(
+                    'No hay diarios que coincidan con la búsqueda, así que no hay nada que exportar.',
+                    [],
+                    404
+                );
+            }
+
+            $contenido = ReporteDiarioExport::generar($plans, $filtros);
+
+            return response($contenido, 200, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="'
+                    .ReporteDiarioExport::nombreArchivo($filtros).'"',
+                'Content-Length' => (string) strlen($contenido),
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma' => 'no-cache',
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $this->jsonError('No se pudo generar el reporte detallado.', [], 500);
+        }
+    }
+
+    /**
+     * Marca de agua SPECIMEN, centrada y en diagonal, sobre todas las páginas.
+     *
+     * Se dibuja con el lienzo de dompdf porque el PDF no admite rotar texto con
+     * CSS. El ángulo va en negativo a propósito: dompdf compone la matriz de
+     * rotación como [cos, -sin, sin, cos], así que un ángulo positivo haría
+     * bajar la marca de izquierda a derecha. Con -45 sube, como se pidió.
+     *
+     * La posición se calcula a mano: se resta media longitud del texto en la
+     * dirección de la diagonal para que el centro caiga en el centro de la
+     * página, y se descuenta la altura de la fuente porque el texto se coloca
+     * por su parte de arriba, no por su línea base.
+     *
+     * El color es gris oscuro, pero con muy poca opacidad: así sobre el papel
+     * blanco queda un gris clarísimo y sobre el texto negro casi no se nota. Si
+     * se pintara un gris claro opaco, taparía las letras del documento.
      */
     private function marcarComoMuestra(Dompdf $dompdf): void
     {
         $canvas = $dompdf->getCanvas();
-        $fuente = $dompdf->getFontMetrics()->getFont('Helvetica', 'bold');
+        $metricas = $dompdf->getFontMetrics();
+        $fuente = $metricas->getFont('Helvetica', 'bold');
 
-        $canvas->page_text(
-            $canvas->get_width() * 0.08,
-            $canvas->get_height() * 0.62,
-            'SPECIMEN',
-            $fuente,
-            110,
-            [0.78, 0.78, 0.78],
-            0,
-            0,
-            32
+        $texto = 'SPECIMEN';
+        $tamano = 88;
+        $angulo = -45;
+        $color = [0.28, 0.28, 0.28];
+        $transparencia = 0.16;
+
+        $ancho = $canvas->get_width();
+        $alto = $canvas->get_height();
+
+        $largo = $metricas->getTextWidth($texto, $fuente, $tamano);
+
+        // Ojo: CPDF coloca el texto descontando la altura de fuente SIN el
+        // factor de interlineado que aplica getFontHeight(). Se divide por ese
+        // factor para descontar exactamente lo mismo y no quedar descentrado.
+        $altura = $metricas->getFontHeight($fuente, $tamano)
+            / $dompdf->getOptions()->getFontHeightRatio();
+
+        $radianes = deg2rad(abs($angulo));
+        $avanceX = cos($radianes);
+        $avanceY = sin($radianes);
+
+        // El centro óptico de las mayúsculas va media altura por encima de la
+        // línea base, así que la base baja ese tanto para quedar centrada.
+        $centroX = $ancho / 2;
+        $centroY = ($alto / 2) + ($tamano * 0.36);
+
+        $x = $centroX - ($largo / 2) * $avanceX;
+        $y = $centroY + ($largo / 2) * $avanceY - $altura;
+
+        // Se dibuja con page_script y no con page_text porque en un PDF la
+        // transparencia es un estado de dibujo: afecta a lo que se pinta
+        // DESPUÉS de fijarla. Aquí se fija en cada página, justo antes de la
+        // marca, y se devuelve a 1 para no afectar al resto.
+        $canvas->page_script(
+            function ($numero, $total, $lienzo) use ($x, $y, $texto, $fuente, $tamano, $color, $angulo, $transparencia) {
+                $lienzo->set_opacity($transparencia);
+                $lienzo->text($x, $y, $texto, $fuente, $tamano, $color, 0, 0, $angulo);
+                $lienzo->set_opacity(1);
+            }
         );
     }
 

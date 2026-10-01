@@ -104,6 +104,11 @@ class Helper
     /**
      * Convierte cualquier valor (Carbon, DateTime, string, null) a Carbon.
      * Devuelve null si el valor está vacío o no se puede interpretar.
+     *
+     * Ojo con las fechas escritas a mano: en español se escriben día/mes/año,
+     * pero Carbon::parse() las lee al revés (05/10/2026 lo entiende como el
+     * 10 de mayo). Por eso primero se prueban los formatos con barras como
+     * día/mes/año y recién después se deja que Carbon decida.
      */
     public static function toCarbon(mixed $value): ?Carbon
     {
@@ -119,8 +124,28 @@ class Helper
             return Carbon::instance($value);
         }
 
+        $texto = trim((string) $value);
+
+        // El formato con barras se lee como día/mes/año; el valor indica si ese
+        // formato trae hora (si no, se deja la fecha a las 00:00 para no guardar
+        // una hora cualquiera).
+        foreach (['d/m/Y' => false, 'd/m/Y H:i' => true, 'd/m/Y H:i:s' => true, 'd-m-Y' => false] as $formato => $conHora) {
+            try {
+                $fecha = Carbon::createFromFormat($formato, $texto);
+            } catch (Throwable) {
+                continue;
+            }
+
+            $fallos = \DateTime::getLastErrors();
+
+            // Si PHP avisa de algo (por ejemplo 31/02) se prueba el siguiente.
+            if ($fecha && ($fallos === false || ($fallos['warning_count'] === 0 && $fallos['error_count'] === 0))) {
+                return $conHora ? $fecha : $fecha->startOfDay();
+            }
+        }
+
         try {
-            return Carbon::parse((string) $value);
+            return Carbon::parse($texto);
         } catch (Throwable) {
             return null;
         }

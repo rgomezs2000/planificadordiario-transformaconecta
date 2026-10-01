@@ -29,6 +29,9 @@ Route::prefix('diario')->name('diario.')->group(function () {
     Route::get('/listado', [DailyPlanController::class, 'index'])->name('listado');
     Route::get('/tabla', [DailyPlanController::class, 'list'])->name('tabla');
 
+    // Reporte detallado en Excel, con los filtros del buscador
+    Route::get('/reporte', [DailyPlanController::class, 'reporte'])->name('reporte');
+
     // Guardar el día que envía el formulario
     Route::post('/', [DailyPlanController::class, 'store'])->name('store');
 

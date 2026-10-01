@@ -935,6 +935,39 @@ div.dt-container .dt-info {
     color: var(--tc-blanco);
 }
 
+/* Al pasar el puntero, cada botón muestra su color: es un anticipo de lo que
+   pasa al elegirlo. El que ya está elegido se refuerza con un halo de su tono.
+   Los bloqueados no reaccionan. */
+.btn-check:not(:checked):not(:disabled) + .tf-energia__boton--baja:hover {
+    border-color: var(--tf-baja);
+    background-color: rgba(217, 11, 11, 0.12);
+    color: var(--tf-baja);
+}
+
+.btn-check:not(:checked):not(:disabled) + .tf-energia__boton--media:hover {
+    border-color: var(--tf-media);
+    background-color: rgba(242, 183, 5, 0.2);
+    color: #8a6800;
+}
+
+.btn-check:not(:checked):not(:disabled) + .tf-energia__boton--alta:hover {
+    border-color: var(--tf-alta);
+    background-color: rgba(30, 158, 90, 0.14);
+    color: var(--tf-alta);
+}
+
+.btn-check:checked + .tf-energia__boton--baja:hover {
+    box-shadow: 0 0 0 0.22rem rgba(217, 11, 11, 0.28);
+}
+
+.btn-check:checked + .tf-energia__boton--media:hover {
+    box-shadow: 0 0 0 0.22rem rgba(242, 183, 5, 0.32);
+}
+
+.btn-check:checked + .tf-energia__boton--alta:hover {
+    box-shadow: 0 0 0 0.22rem rgba(30, 158, 90, 0.28);
+}
+
 .btn-check:focus-visible + .tf-energia__boton,
 .btn-check:focus-visible + .tf-dia__letra {
     box-shadow: 0 0 0 0.2rem rgba(0, 128, 208, 0.3);
@@ -1188,6 +1221,48 @@ div.dt-container .dt-info {
     font-size: 0.88rem;
 }
 
+/* La cabecera y el pie van con el azul institucional y letras blancas, en
+   mayúsculas y centradas, iguales en TODAS las columnas, sin distinguir la que
+   está ordenada. Se usa background-color y se anula el box-shadow porque
+   Bootstrap pinta el fondo de las celdas con una sombra interior que tapa el
+   color propio. */
+.tf-tabla thead th,
+.tf-tabla tfoot th,
+.tf-tabla thead th.dt-ordering-asc,
+.tf-tabla thead th.dt-ordering-desc,
+.tf-tabla thead th.sorting_asc,
+.tf-tabla thead th.sorting_desc,
+.tf-tabla thead th:hover,
+.tf-tabla tfoot th:hover {
+    padding: 0.6rem 0.5rem;
+    background-color: var(--tc-azul-oscuro) !important;
+    box-shadow: none !important;
+    color: var(--tc-blanco) !important;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tf-tabla thead th {
+    border-bottom: 2px solid var(--tc-azul-oscuro);
+}
+
+.tf-tabla tfoot th {
+    border-top: 2px solid var(--tc-azul-oscuro);
+}
+
+/* Las flechitas de orden, en blanco para que se vean sobre el azul. */
+.tf-tabla thead th.dt-orderable-asc span.dt-column-order::before,
+.tf-tabla thead th.dt-orderable-desc span.dt-column-order::before,
+.tf-tabla thead th.dt-orderable-asc span.dt-column-order::after,
+.tf-tabla thead th.dt-orderable-desc span.dt-column-order::after,
+.tf-tabla thead th span.dt-column-order::before,
+.tf-tabla thead th span.dt-column-order::after {
+    filter: brightness(0) invert(1);
+}
+
 /* La letra del día, como en el formulario. */
 .tf-tabla__dia {
     display: inline-flex;
@@ -1371,6 +1446,275 @@ div.dt-container .dt-info {
 
 #modalImprimir .modal-footer {
     background: var(--tc-gris-100);
+}
+
+/* --- Buscador de diarios -------------------------------------------------
+   Va arriba de la tabla. Reutiliza los círculos del día y los botones de
+   energía del formulario, para que se vea igual que el impreso. */
+
+/* Los bloques ocultos del buscador no deben ocupar lugar aunque sean flex. */
+.tf-filtros [hidden] {
+    display: none !important;
+}
+
+.tf-filtros {
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--tc-borde);
+    border-top: 4px solid var(--tc-turquesa);
+    border-radius: var(--tc-radio);
+    background: var(--tc-blanco);
+    box-shadow: var(--tc-sombra);
+}
+
+.tf-filtros__titulo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+    color: var(--tc-azul-oscuro);
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.tf-filtros__titulo i {
+    color: var(--tc-naranja);
+}
+
+.tf-filtros__cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+/* La palabra clave arriba de todo y a lo ancho: es la que siempre se usa. */
+.tf-filtros__palabra {
+    border-color: var(--tc-azul);
+    border-width: 2px;
+}
+
+.tf-filtros__palabra:focus {
+    border-color: var(--tc-turquesa);
+    box-shadow: 0 0 0 0.2rem rgba(0, 174, 156, 0.2);
+}
+
+.tf-filtros__fila {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem 1.4rem;
+    align-items: flex-start;
+}
+
+.tf-filtros__grupo {
+    min-width: 12rem;
+    flex: 0 1 auto;
+}
+
+.tf-filtros__grupo--ancho {
+    flex: 1 1 18rem;
+}
+
+.tf-filtros__linea {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.tf-filtros__linea input {
+    max-width: 10rem;
+}
+
+.tf-filtros__ayuda {
+    margin: 0.35rem 0 0;
+    color: var(--tc-gris-500);
+    font-size: 0.75rem;
+}
+
+.tf-filtros__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px dashed var(--tc-borde);
+}
+
+/* El día que se marca solo al elegir la fecha. */
+.tf-dia__letra--activo {
+    border-color: var(--tc-turquesa);
+    background: var(--tc-turquesa);
+    color: var(--tc-blanco);
+}
+
+/* --- Controles de formulario: todos iguales y con sus estados -------------
+   Un mismo estilo para los campos de texto, las áreas de texto, las listas,
+   las casillas y los botones de opción, y para sus estados: normal, puntero
+   encima, foco, sólo lectura, deshabilitado y con error. Se sigue el lenguaje
+   de la hoja impresa: bordes redondeados, fondo blanco y, al activarse, el
+   color de la sección. */
+
+/* 1. Campos de texto, áreas de texto y listas. */
+.form-control,
+.form-select {
+    padding: 0.5rem 0.75rem;
+    border: 2px solid var(--tc-borde);
+    border-radius: var(--tc-radio-sm);
+    background-color: var(--tc-blanco);
+    color: var(--tc-texto);
+    font-size: 0.9rem;
+    transition: border-color var(--tc-transicion), box-shadow var(--tc-transicion),
+        background-color var(--tc-transicion);
+}
+
+.form-control-sm,
+.form-select-sm {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+textarea.form-control {
+    min-height: 4.5rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+/* Con el puntero encima, el borde se tiñe de azul. */
+.form-control:hover:not(:disabled):not([readonly]),
+.form-select:hover:not(:disabled) {
+    border-color: var(--tc-azul);
+}
+
+/* Con el foco puesto: borde turquesa y un halo suave del mismo color. */
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--tc-turquesa);
+    background-color: var(--tc-blanco);
+    box-shadow: 0 0 0 0.22rem rgba(0, 174, 156, 0.22);
+    outline: 0;
+}
+
+.form-control::placeholder {
+    color: var(--tc-gris-500);
+    opacity: 0.85;
+}
+
+/* 2. Sólo lectura: se lee bien, pero se nota que no se puede escribir. */
+.form-control[readonly],
+.form-select[readonly] {
+    border-color: var(--tc-celeste);
+    background-color: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-weight: 600;
+    cursor: default;
+}
+
+.form-control[readonly]:focus,
+.form-select[readonly]:focus {
+    border-color: var(--tc-celeste);
+    box-shadow: 0 0 0 0.22rem rgba(0, 156, 228, 0.16);
+}
+
+/* 3. Deshabilitado: en gris, y no se puede ni tocar. */
+.form-control:disabled,
+.form-select:disabled {
+    border-color: var(--tc-gris-200);
+    background-color: var(--tc-gris-100);
+    color: var(--tc-gris-500);
+    cursor: not-allowed;
+    opacity: 1;
+}
+
+/* 4. Casillas y botones de opción. */
+.form-check-input {
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-top: 0.12rem;
+    border: 2px solid var(--tc-gris-300);
+    background-color: var(--tc-blanco);
+    transition: background-color var(--tc-transicion), border-color var(--tc-transicion),
+        box-shadow var(--tc-transicion);
+}
+
+.form-check-input[type="checkbox"] {
+    border-radius: 0.35rem;
+}
+
+.form-check-input[type="radio"] {
+    border-radius: 50%;
+}
+
+.form-check-input:hover:not(:disabled) {
+    border-color: var(--tc-turquesa);
+}
+
+.form-check-input:focus {
+    border-color: var(--tc-turquesa);
+    box-shadow: 0 0 0 0.2rem rgba(0, 174, 156, 0.22);
+    outline: 0;
+}
+
+.form-check-input:checked {
+    border-color: var(--tc-turquesa);
+    background-color: var(--tc-turquesa);
+}
+
+.form-check-input:disabled {
+    border-color: var(--tc-gris-200);
+    background-color: var(--tc-gris-100);
+    opacity: 1;
+}
+
+.form-check-input:disabled:checked {
+    border-color: var(--tc-turquesa-oscuro);
+    background-color: var(--tc-turquesa-oscuro);
+}
+
+.form-check-label {
+    color: var(--tc-texto);
+    cursor: pointer;
+}
+
+.form-check-input:disabled ~ .form-check-label {
+    color: var(--tc-gris-500);
+    cursor: not-allowed;
+}
+
+/* 5. Las listas llevan la flecha en el azul de la marca. */
+.form-select {
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23004090' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 14px 10px;
+    appearance: none;
+}
+
+/* 6. Botones de opción que son etiqueta (energía, día): también sus estados. */
+.btn-check:disabled + .tf-energia__boton,
+.btn-check:disabled + .tf-dia__letra {
+    border-color: var(--tc-gris-200);
+    background-color: var(--tc-gris-100);
+    color: var(--tc-gris-500);
+    cursor: not-allowed;
+}
+
+.btn-check:checked:disabled + .tf-energia__boton,
+.btn-check:checked:disabled + .tf-dia__letra {
+    border-color: var(--tc-gris-300);
+    background-color: var(--tc-gris-300);
+    color: var(--tc-blanco);
+}
+
+/* 7. Con error de validación. */
+.form-control.is-invalid,
+.form-select.is-invalid,
+.form-check-input.is-invalid {
+    border-color: var(--tc-rojo);
+    box-shadow: 0 0 0 0.2rem rgba(217, 11, 11, 0.14);
 }
 
 /* ==========================================================================

@@ -2,7 +2,99 @@
 
 @section('titulo', 'Diarios registrados · Mi Planificador Diario')
 
+@push('estilos')
+    {{-- Calendario del filtro por fecha, por CDN como el del formulario --}}
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-datepicker@1.10.1/dist/css/bootstrap-datepicker3.min.css">
+@endpush
+
 @section('contenido')
+
+    {{-- Miniformulario de búsqueda, arriba de la tabla.
+
+         La palabra clave se escribe y la tabla se filtra sola, sin botón: por eso
+         "Filtrar por" sólo ofrece fecha y energía, que también se aplican al
+         elegirlas. El bloque que se despliega va debajo del campo de la palabra
+         clave, porque ese campo está siempre a la vista.
+         "Limpiar" deja todo en blanco y vuelve a traer todos los diarios. --}}
+    <section class="tf-filtros" id="filtros-diarios">
+        <h4 class="tf-filtros__titulo">
+            <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            Buscar diario
+        </h4>
+
+        <div class="tf-filtros__cuerpo">
+            {{-- Palabra clave: siempre a la vista, filtra mientras se escribe --}}
+            <div class="tf-filtros__busqueda">
+                <input type="search" class="form-control tf-filtros__palabra" id="filtro-palabra"
+                       placeholder="Palabra clave: basta con una letra"
+                       aria-label="Palabra clave del diario" autocomplete="off" maxlength="60"
+                       data-tf-filtro-palabra>
+
+                <p class="tf-filtros__ayuda">
+                    Filtra mientras escribes; busca dentro de los objetivos, el horario, las notas
+                    y el cierre del día.
+                </p>
+            </div>
+
+            <div class="tf-filtros__fila">
+                <div class="tf-filtros__grupo">
+                    <label class="tf-etiqueta" for="filtro-por">Filtrar por</label>
+                    <select class="form-select form-select-sm" id="filtro-por" data-tf-filtro-por>
+                        <option value="todos">Todos los diarios</option>
+                        <option value="fecha">Fecha</option>
+                        <option value="energia">Energía</option>
+                    </select>
+                </div>
+
+                {{-- Fecha: se aplica sola y marca el día de la semana --}}
+                <div class="tf-filtros__grupo tf-filtros__grupo--ancho" data-tf-panel="fecha" hidden>
+                    <label class="tf-etiqueta" for="filtro-fecha">Fecha</label>
+
+                    <div class="tf-filtros__linea">
+                        <input type="text" class="form-control form-control-sm" id="filtro-fecha"
+                               placeholder="dd/mm/aaaa" autocomplete="off" data-tf-filtro-fecha>
+
+                        <div class="tf-dias" data-tf-dias>
+                            @foreach ($weekDays as $weekDay)
+                                <span class="tf-dia__letra" data-dia="{{ $weekDay['value'] }}"
+                                      title="{{ $weekDay['label'] }}">{{ $weekDay['label'] }}</span>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    <p class="tf-filtros__ayuda">El día se marca solo al elegir la fecha.</p>
+                </div>
+
+                {{-- Energía: se aplica al elegirla --}}
+                <div class="tf-filtros__grupo" data-tf-panel="energia" hidden>
+                    <span class="tf-etiqueta">Energía</span>
+
+                    <div class="tf-energia">
+                        @foreach ($energyLevels as $energyLevel)
+                            <input type="radio" class="btn-check" name="filtro_energia"
+                                   id="filtro-energia-{{ $energyLevel->slug }}"
+                                   value="{{ $energyLevel->slug }}" data-tf-filtro-energia>
+                            <label class="tf-energia__boton tf-energia__boton--{{ $energyLevel->slug }}"
+                                   for="filtro-energia-{{ $energyLevel->slug }}">
+                                <span aria-hidden="true">{{ $energyLevel->emoji }}</span>
+                                {{ $energyLevel->name }}
+                            </label>
+                        @endforeach
+                    </div>
+
+                    <p class="tf-filtros__ayuda">Vuelve a pulsar el mismo para quitarlo.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="tf-filtros__acciones">
+            <button type="button" class="tc-boton tc-boton--contorno" data-tf-limpiar>
+                <i class="bi bi-eraser" aria-hidden="true"></i>
+                Limpiar
+            </button>
+        </div>
+    </section>
 
     <section class="tc-tarjeta tf-seccion mb-3">
         <h3 class="tf-titulo">
@@ -14,31 +106,42 @@
              buscador, el selector de registros por página (5, 10, 25, 50 y 100)
              y el paginador. Si no hay filas escribe "No existen registros".
 
-             No se envuelve en .table-responsive porque DataTables recomienda su
-             propio scrollX: si no, los controles de la librería se desplazarían
-             junto con la tabla en pantallas estrechas. --}}
+             Sin scrollX ni .table-responsive: con scrollX, DataTables reemplaza
+             la cabecera por una copia que quedaba invisible al haber un pie de
+             tabla. Las cuatro columnas se reparten solas (autoWidth). --}}
         <table class="table tf-tabla mb-0" id="tabla-diarios"
                data-url-tabla="{{ route('diario.tabla') }}"
+               data-url-reporte="{{ route('diario.reporte') }}"
                data-url-ver="{{ route('diario.show', ['dailyPlan' => '__ID__']) }}"
                data-url-editar="{{ route('diario.edit', ['dailyPlan' => '__ID__']) }}"
                data-url-eliminar="{{ route('diario.destroy', ['dailyPlan' => '__ID__']) }}">
             <thead>
                 <tr>
-                    <th scope="col">ID</th>
-                    <th scope="col">Fecha y día</th>
+                    <th scope="col">Nº</th>
+                    <th scope="col">Fecha</th>
                     <th scope="col">Energía</th>
-                    <th scope="col" class="text-center">Acciones</th>
+                    <th scope="col" class="text-center">Acción</th>
                 </tr>
             </thead>
+            {{-- El pie repite la cabecera: así, cuando la tabla es larga, se
+                 siguen leyendo los títulos abajo. DataTables sólo ordena por
+                 los de arriba; éstos son la copia visual. --}}
+            <tfoot>
+                <tr>
+                    <th scope="col">Nº</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Energía</th>
+                    <th scope="col" class="text-center">Acción</th>
+                </tr>
+            </tfoot>
             <tbody></tbody>
         </table>
     </section>
 
-    {{-- Los dos primeros todavía no hacen nada: quedan deshabilitados a propósito.
-         Cuando se activen, sólo hay que quitarles el atributo disabled. --}}
+    {{-- Sólo queda deshabilitado "Generar resumen". Cuando se active, basta con
+         quitarle el atributo disabled. --}}
     <div class="tf-acciones">
-        <button type="button" class="tc-boton tc-boton--azul" disabled
-                title="Disponible próximamente">
+        <button type="button" class="tc-boton tc-boton--azul" data-tf-reporte>
             <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
             Generar reporte detallado
         </button>
@@ -60,6 +163,10 @@
 @endsection
 
 @push('scripts')
+    {{-- Calendario del filtro por fecha, por CDN con su traducción --}}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap-datepicker@1.10.1/dist/js/bootstrap-datepicker.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap-datepicker@1.10.1/dist/locales/bootstrap-datepicker.es.min.js"></script>
+
     <script>
         $(function () {
             var P = window.Planificador;
@@ -69,6 +176,16 @@
             }
 
             var $tabla = $('#tabla-diarios');
+            var $filtros = $('#filtros-diarios');
+
+            /** Filtros activos del buscador: es lo que viaja al servidor. */
+            var filtros = { fecha: '', energia: '', palabra: '' };
+
+            /** Lo último que se pidió, para no repetir la misma búsqueda. */
+            var ultimaBusqueda = null;
+
+            /** Espera antes de buscar mientras se escribe, para no pedir por tecla. */
+            var espera = null;
 
             /** Sustituye __ID__ en las plantillas de dirección. */
             function url(plantilla, id) {
@@ -97,9 +214,22 @@
             }
 
             var tabla = P.Tabla.crear('#tabla-diarios', {
-                scrollX: true,
+                // Sin scrollX: con él, DataTables reemplazaba la cabecera por
+                // una copia que quedaba invisible al haber un pie de tabla.
+                // Con autoWidth, las cuatro columnas se reparten solas.
+                autoWidth: true,
+                // Por defecto se ordena por la fecha del diario (columna 1), del
+                // más antiguo al más actual: nunca por el número de registro ni
+                // por la fecha de creación. Al pulsar una cabecera se reordena
+                // por ese campo.
+                order: [[1, 'asc']],
                 ajax: {
                     url: $tabla.attr('data-url-tabla'),
+                    // Los filtros viajan en todas las peticiones, así también se
+                    // respetan al recargar la tabla después de eliminar.
+                    data: function (datos) {
+                        return $.extend({}, datos, filtros);
+                    },
                     dataSrc: function (json) {
                         // Si el servidor contestó con error, se avisa.
                         if (! json || json.ok === false) {
@@ -111,14 +241,22 @@
 
                         return (json.data && json.data.plans) || [];
                     },
-                    error: function (xhr) {
+                    error: function (xhr, textoEstado) {
+                        // DataTables cancela la petición anterior cuando llega
+                        // una búsqueda nueva. Esa cancelación no es una falla:
+                        // avisar de ella mostraba un error falso al escribir.
+                        if (textoEstado === 'abort') {
+                            return;
+                        }
+
                         P.Alerta.error(P.Ajax.mensajeDeError(xhr));
                     }
                 },
                 columns: [
-                    { data: 'id', width: '5rem' },
+                    { data: 'id', className: 'text-center' },
                     {
                         data: 'date',
+                        className: 'text-center',
                         render: function (dato, tipo, fila) {
                             if (tipo !== 'display') {
                                 return dato;   // ordena por la fecha ISO
@@ -131,6 +269,7 @@
                     },
                     {
                         data: 'energy',
+                        className: 'text-center',
                         render: function (dato, tipo, fila) {
                             if (tipo !== 'display') {
                                 return dato || '';
@@ -190,14 +329,192 @@
                         textoAceptar: 'Sí, eliminar',
                         claseAceptar: 'btn btn-danger',
                         alAceptar: function () {
-                            P.Ajax.eliminar(url('data-url-eliminar', id), function (respuesta) {
-                                P.Alerta.exito(respuesta.message, 'Diario eliminado');
-                                tabla.ajax.reload(null, false);
+                            // avisoExito va en falso a propósito: si no, el
+                            // ayudante mostraría un aviso y la vista otro, y
+                            // salían dos mensajes de la misma eliminación.
+                            P.Ajax.peticion({
+                                url: url('data-url-eliminar', id),
+                                tipo: 'DELETE',
+                                avisoExito: false,
+                                alExito: function (respuesta) {
+                                    // Un solo aviso y, al aceptarlo, se recarga
+                                    // la página entera (no la tabla por AJAX).
+                                    P.Alerta.exito(respuesta.message, 'Diario eliminado', function () {
+                                        window.location.reload();
+                                    });
+                                }
                             });
                         }
                     });
                 }
             });
+
+            /* ==================================================================
+               Miniformulario de filtros
+               ================================================================== */
+
+            /** Convierte dd/mm/aaaa en una fecha de JavaScript. */
+            function comoFecha(texto) {
+                var partes = String(texto || '').split('/');
+
+                if (partes.length !== 3) {
+                    return null;
+                }
+
+                var dia = parseInt(partes[0], 10);
+                var mes = parseInt(partes[1], 10);
+                var anio = parseInt(partes[2], 10);
+
+                if (! dia || ! mes || ! anio || String(anio).length !== 4) {
+                    return null;
+                }
+
+                var fecha = new Date(anio, mes - 1, dia);
+
+                return isNaN(fecha.getTime()) || fecha.getDate() !== dia ? null : fecha;
+            }
+
+            /** Marca el círculo del día que corresponde a la fecha elegida. */
+            function marcarDia(texto) {
+                $filtros.find('[data-dia]').removeClass('tf-dia__letra--activo');
+
+                var fecha = comoFecha(texto);
+
+                if (fecha) {
+                    $filtros.find('[data-dia="' + fecha.getDay() + '"]')
+                        .addClass('tf-dia__letra--activo');
+                }
+            }
+
+            /** Muestra el bloque elegido y los que ya tienen un valor cargado. */
+            function pintarPaneles() {
+                var elegido = $filtros.find('[data-tf-filtro-por]').val();
+
+                $filtros.find('[data-tf-panel]').each(function () {
+                    var $panel = $(this);
+                    var nombre = $panel.attr('data-tf-panel');
+
+                    $panel.prop('hidden', elegido !== nombre && ! filtros[nombre]);
+                });
+            }
+
+            /**
+             * Toma lo que hay en el buscador y vuelve a pedir la tabla.
+             * No hay botón: la palabra clave, la fecha y la energía se aplican
+             * solas en cuanto cambian.
+             */
+            function aplicar() {
+                var nuevos = {
+                    fecha: $.trim($filtros.find('[data-tf-filtro-fecha]').val()),
+                    energia: $filtros.find('[data-tf-filtro-energia]:checked').val() || '',
+                    palabra: $.trim($filtros.find('[data-tf-filtro-palabra]').val())
+                };
+
+                // Si es exactamente lo mismo que ya se está mostrando, no se
+                // pide de nuevo: así no se cancelan peticiones sin motivo.
+                var repetida = ultimaBusqueda !== null &&
+                    nuevos.fecha === ultimaBusqueda.fecha &&
+                    nuevos.energia === ultimaBusqueda.energia &&
+                    nuevos.palabra === ultimaBusqueda.palabra;
+
+                filtros = nuevos;
+                pintarPaneles();
+
+                if (repetida) {
+                    return;
+                }
+
+                ultimaBusqueda = { fecha: nuevos.fecha, energia: nuevos.energia, palabra: nuevos.palabra };
+                tabla.ajax.reload();
+            }
+
+            /** Aplica con una pequeña espera, para no pedir en cada tecla. */
+            function aplicarAlEscribir() {
+                window.clearTimeout(espera);
+                espera = window.setTimeout(aplicar, 350);
+            }
+
+            /** Deja el buscador en blanco y trae todos los diarios. */
+            function limpiar() {
+                window.clearTimeout(espera);
+
+                filtros = { fecha: '', energia: '', palabra: '' };
+                // Se olvida lo buscado: la próxima búsqueda se hace siempre.
+                ultimaBusqueda = { fecha: '', energia: '', palabra: '' };
+
+                $filtros.find('[data-tf-filtro-por]').val('todos');
+                $filtros.find('[data-tf-filtro-fecha]').val('');
+                $filtros.find('[data-tf-filtro-palabra]').val('');
+                $filtros.find('[data-tf-filtro-energia]').prop('checked', false);
+
+                marcarDia('');
+                pintarPaneles();
+                tabla.ajax.reload();
+            }
+
+            // Calendario en dd/mm/aaaa, igual que el del formulario.
+            $filtros.find('[data-tf-filtro-fecha]').datepicker({
+                format: 'dd/mm/yyyy',
+                language: 'es',
+                autoclose: true,
+                todayHighlight: true,
+                orientation: 'bottom auto'
+            }).on('change changeDate', function () {
+                marcarDia($(this).val());
+                aplicar();
+            });
+
+            // Escribir en la palabra clave filtra solo; borrar vuelve a traer todo.
+            $filtros.on('input search', '[data-tf-filtro-palabra]', aplicarAlEscribir);
+
+            // Enter no espera: aplica en el momento.
+            $filtros.on('keydown', '[data-tf-filtro-palabra]', function (evento) {
+                if (evento.key === 'Enter') {
+                    evento.preventDefault();
+                    window.clearTimeout(espera);
+                    aplicar();
+                }
+            });
+
+            $filtros.on('change', '[data-tf-filtro-por]', pintarPaneles);
+
+            // Elegir una energía la aplica sola.
+            $filtros.on('change', '[data-tf-filtro-energia]', function () {
+                filtros.energia = $(this).val();
+                pintarPaneles();
+                aplicar();
+            });
+
+            // Volver a pulsar la energía marcada la quita: los radios no se
+            // desmarcan solos, así que se hace a mano.
+            $filtros.on('click', '.tf-energia__boton', function () {
+                var $radio = $('#' + $(this).attr('for'));
+
+                if ($radio.prop('checked') && filtros.energia) {
+                    $radio.prop('checked', false);
+                    filtros.energia = '';
+                    pintarPaneles();
+                    aplicar();
+
+                    return false;
+                }
+
+                return true;
+            });
+
+            $filtros.on('click', '[data-tf-limpiar]', limpiar);
+
+            // Reporte detallado en Excel: se genera con los filtros que estén
+            // puestos, así el archivo trae lo mismo que se ve en la tabla.
+            $('[data-tf-reporte]').on('click', function () {
+                if (! P.Reporte) {
+                    return;
+                }
+
+                P.Reporte.descargar($tabla.attr('data-url-reporte'), filtros, $(this));
+            });
+
+            pintarPaneles();
         });
     </script>
 

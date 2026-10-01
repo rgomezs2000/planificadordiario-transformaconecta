@@ -143,7 +143,7 @@ class DailyPlan extends Model
             ->when($to, fn (Builder $q, mixed $value) => $q->whereDate('plan_date', '<=', $value));
     }
 
-    /** Búsqueda libre en el cierre del día, los objetivos y las notas. */
+    /** Búsqueda libre en el cierre del día, los objetivos, el horario y las notas. */
     public function scopeSearch(Builder $query, ?string $term): Builder
     {
         $term = Helper::strip($term);
@@ -160,8 +160,35 @@ class DailyPlan extends Model
                 ->orWhere('pending_when', 'like', $like)
                 ->orWhere('proud_of', 'like', $like)
                 ->orWhereHas('goals', fn (Builder $goals) => $goals->where('description', 'like', $like))
+                ->orWhereHas('scheduleEntries', fn (Builder $franjas) => $franjas->where('activity', 'like', $like))
+                ->orWhereHas('actionBlocks', fn (Builder $bloques) => $bloques->where('task', 'like', $like))
                 ->orWhereHas('notes', fn (Builder $notes) => $notes->where('content', 'like', $like));
         });
+    }
+
+    /**
+     * Filtros del buscador de diarios: fecha exacta, energía y palabra clave.
+     *
+     * Los usan el listado y el reporte detallado, para que el Excel salga con
+     * los mismos diarios que se están viendo en pantalla.
+     *
+     * @param  array{fecha?: mixed, energia?: mixed, palabra?: mixed}  $filtros
+     */
+    public function scopeFiltrado(Builder $query, array $filtros = []): Builder
+    {
+        $energia = Helper::strip($filtros['energia'] ?? null);
+        $fecha = Helper::toCarbon($filtros['fecha'] ?? null);
+
+        return $query
+            ->when($fecha, fn (Builder $q, mixed $dia) => $q->whereDate('plan_date', $dia->toDateString()))
+            ->when(
+                $energia !== '',
+                fn (Builder $q) => $q->whereHas(
+                    'energyLevel',
+                    fn (Builder $nivel) => $nivel->where('slug', $energia)
+                )
+            )
+            ->search($filtros['palabra'] ?? null);
     }
 
     /* ======================================================================
@@ -216,7 +243,7 @@ class DailyPlan extends Model
                 fn (Builder $query, mixed $energy) => $query->where('energy_level_id', $energy)
             )
             ->search($filters['search'] ?? null)
-            ->orderByDesc('plan_date')
+            ->orderBy('plan_date')
             ->paginate($perPage)
             ->withQueryString();
     }
@@ -226,12 +253,44 @@ class DailyPlan extends Model
      *
      * Es lo que alimenta la tabla del listado: se entregan todas las filas y
      * DataTables se encarga de buscar, ordenar y paginar en el navegador.
+     *
+     * Acepta los filtros del buscador, que se pueden combinar: una fecha con
+     * una energía, una palabra clave con una fecha, etc. La palabra clave se
+     * busca dentro del cierre del día, los objetivos, el horario, las notas y
+     * el bloque de acción, y basta con una sola letra.
+     *
+     * @param  array{fecha?: mixed, energia?: mixed, palabra?: mixed}  $filtros
      */
-    public static function allForList(): Collection
+    public static function allForList(array $filtros = []): Collection
     {
         return static::query()
             ->with('energyLevel')
-            ->orderByDesc('plan_date')
+            ->filtrado($filtros)
+            ->orderBy('plan_date')
+            ->get();
+    }
+
+    /**
+     * Los días que van al reporte detallado, con todo lo que se desglosa.
+     *
+     * Se cargan las relaciones de una vez para que el reporte no dispare una
+     * consulta por cada diario.
+     *
+     * @param  array{fecha?: mixed, energia?: mixed, palabra?: mixed}  $filtros
+     */
+    public static function forReport(array $filtros = []): Collection
+    {
+        return static::query()
+            ->with([
+                'energyLevel',
+                'preparationItems',
+                'reflectionAnswers.question',
+                'actionBlocks.duration',
+                'actionBlocks.outcome',
+                'notes',
+            ])
+            ->filtrado($filtros)
+            ->orderBy('plan_date')
             ->get();
     }
 
@@ -376,6 +435,78 @@ class DailyPlan extends Model
             'action_blocks_count' => (int) ($this->action_blocks_count ?? 0),
             'notes_count' => (int) ($this->notes_count ?? 0),
             'is_closed' => $this->isClosed(),
+        ];
+    }
+
+    /**
+     * Una fila del reporte detallado: un diario por fila.
+     *
+     * Devuelve los textos ya armados para el Excel: los ítems del "antes de
+     * empezar", las preguntas de procrastinación con su respuesta, el bloque de
+     * acción, el cierre del día y las notas.
+     */
+    public function toReportArray(): array
+    {
+        $this->loadMissing([
+            'energyLevel',
+            'preparationItems',
+            'reflectionAnswers.question',
+            'actionBlocks.duration',
+            'actionBlocks.outcome',
+            'notes',
+        ]);
+
+        return [
+            'date' => $this->plan_date,
+            'day' => Helper::dayName($this->plan_date, capitalize: true),
+            'energy' => $this->energyLevel?->name,
+
+            // Antes de empezar: cada ítem con su marca y lo que se anotó.
+            'preparation' => $this->preparationItems
+                ->map(function (PreparationItem $item) {
+                    $detalle = Helper::strip($item->pivot->preparation_items_description);
+
+                    return ($item->pivot->is_checked ? '[X]' : '[ ]').' '.$item->name
+                        .($detalle !== '' ? ': '.$detalle : '');
+                })
+                ->implode("\n"),
+
+            // ¿Estoy procrastinando?: la pregunta marcada y su respuesta.
+            'procrastination' => $this->reflectionAnswers
+                ->map(function (ReflectionAnswer $respuesta) {
+                    $texto = ($respuesta->is_checked ? '[X]' : '[ ]').' '
+                        .Helper::strip($respuesta->question?->question);
+                    $respuestaTexto = Helper::strip($respuesta->answer);
+
+                    return $respuestaTexto !== '' ? $texto.' — '.$respuestaTexto : $texto;
+                })
+                ->implode("\n"),
+
+            // Bloque de acción: cuánto tiempo, cómo terminó y en qué se trabajó.
+            'action_block' => $this->actionBlocks
+                ->map(function (ActionBlock $bloque) {
+                    $texto = implode(' · ', array_filter([
+                        $bloque->duration?->label,
+                        $bloque->outcome?->name,
+                    ]));
+                    $tarea = Helper::strip($bloque->task);
+
+                    return $tarea !== '' ? $texto."\n".$tarea : $texto;
+                })
+                ->implode("\n"),
+
+            // Cierre del día: las cuatro preguntas de la hoja impresa.
+            'closure' => implode("\n", array_filter([
+                Helper::strip($this->achievements) !== '' ? 'Logré: '.Helper::strip($this->achievements) : null,
+                Helper::strip($this->pending) !== '' ? 'Pendiente: '.Helper::strip($this->pending) : null,
+                Helper::strip($this->pending_when) !== '' ? '¿Cuándo?: '.Helper::strip($this->pending_when) : null,
+                Helper::strip($this->proud_of) !== '' ? 'Orgulloso/a: '.Helper::strip($this->proud_of) : null,
+            ])),
+
+            'notes' => $this->notes
+                ->map(fn (PlanNote $nota) => Helper::strip($nota->content))
+                ->filter()
+                ->implode("\n"),
         ];
     }
 

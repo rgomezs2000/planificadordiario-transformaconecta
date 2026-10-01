@@ -31,7 +31,9 @@ window.Planificador = window.Planificador || {};
         tabla: {
             pageLength: 10,
             lengthMenu: [[5, 10, 25, 50, 100], [5, 10, 25, 50, 100]],
-            orden: []
+            // Sin orden inicial: se respeta el orden en que el servidor manda
+            // las filas. Cada tabla puede fijar el suyo con la opción "order".
+            order: []
         }
     };
 
@@ -110,7 +112,7 @@ window.Planificador = window.Planificador || {};
             return typeof window.bootbox !== 'undefined';
         },
 
-        /** Aviso genérico. $alCerrar se ejecuta al aceptar. */
+        /** Aviso genérico. $alCerrar se ejecuta al cerrar el aviso. */
         mostrar: function (mensaje, titulo, claseIcono, alCerrar) {
             var texto = '<div class="d-flex align-items-start gap-2">' +
                 '<i class="' + (claseIcono || 'bi bi-info-circle') + ' fs-4"></i>' +
@@ -130,11 +132,19 @@ window.Planificador = window.Planificador || {};
                 title: titulo || P.config.tituloAvisos,
                 message: texto,
                 centerVertical: true,
+                // El callback va a nivel del diálogo, NO dentro del botón:
+                // bootbox 6 no llama al callback declarado en buttons.ok, y el
+                // aviso se cerraba sin ejecutar lo que venía después (por
+                // ejemplo, la redirección al guardar).
+                callback: function () {
+                    if ($.isFunction(alCerrar)) {
+                        alCerrar();
+                    }
+                },
                 buttons: {
                     ok: {
                         label: P.config.botonAceptar,
-                        className: 'btn btn-primary',
-                        callback: $.isFunction(alCerrar) ? alCerrar : $.noop
+                        className: 'btn btn-primary'
                     }
                 }
             });
@@ -462,6 +472,144 @@ window.Planificador = window.Planificador || {};
                     window.open(destino, '_blank');
                 }
             });
+
+            return this;
+        }
+    };
+
+    /* ======================================================================
+       Reporte detallado en Excel
+       ====================================================================== */
+
+    P.Reporte = {
+
+        /**
+         * Pide el Excel al servidor con los filtros que estén puestos y lo
+         * descarga, sin recargar la página.
+         *
+         * La respuesta puede ser el archivo (cuando hay diarios) o un JSON con
+         * el aviso (cuando no hay ninguno o algo falló), así que se mira el
+         * tipo de contenido antes de descargar.
+         */
+        descargar: function (url, filtros, $boton) {
+            var self = this;
+            var textoBoton = $boton && $boton.length ? $boton.html() : null;
+
+            if ($boton && $boton.length) {
+                $boton.prop('disabled', true).html(
+                    '<i class="bi bi-hourglass-split" aria-hidden="true"></i> Generando…'
+                );
+            }
+
+            var terminar = function () {
+                if ($boton && $boton.length && textoBoton !== null) {
+                    $boton.prop('disabled', false).html(textoBoton);
+                }
+            };
+
+            $.ajax({
+                url: url,
+                method: 'GET',
+                data: filtros || {},
+                cache: false,
+                xhrFields: { responseType: 'blob' }
+            }).done(function (datos, estado, xhr) {
+                terminar();
+
+                if (self.esJson(xhr)) {
+                    self.leerAviso(xhr.response);
+
+                    return;
+                }
+
+                self.guardarArchivo(datos, self.nombreDe(xhr));
+                P.Alerta.exito('El reporte se descargó en Excel.', 'Reporte generado');
+            }).fail(function (xhr) {
+                terminar();
+
+                if (self.esJson(xhr)) {
+                    self.leerAviso(xhr.response);
+
+                    return;
+                }
+
+                P.Alerta.error('No se pudo generar el reporte detallado.');
+            });
+
+            return this;
+        },
+
+        /** ¿El servidor contestó con un aviso en JSON en vez del archivo? */
+        esJson: function (xhr) {
+            var tipo = '';
+
+            try {
+                tipo = xhr.getResponseHeader('Content-Type') || '';
+            } catch (e) {
+                tipo = '';
+            }
+
+            return tipo.indexOf('application/json') !== -1;
+        },
+
+        /** Lee el aviso del servidor (viene como bloque binario) y lo muestra. */
+        leerAviso: function (bloque) {
+            if (! bloque || ! window.FileReader) {
+                P.Alerta.error('No se pudo generar el reporte detallado.');
+
+                return;
+            }
+
+            var lector = new window.FileReader();
+
+            lector.onload = function () {
+                var respuesta = null;
+
+                try {
+                    respuesta = JSON.parse(String(lector.result));
+                } catch (e) {
+                    respuesta = null;
+                }
+
+                P.Alerta.error((respuesta && respuesta.message) ||
+                    'No se pudo generar el reporte detallado.');
+            };
+
+            lector.readAsText(bloque);
+        },
+
+        /** Nombre del archivo: el que manda el servidor o uno de reserva. */
+        nombreDe: function (xhr) {
+            var cabecera = '';
+
+            try {
+                cabecera = xhr.getResponseHeader('Content-Disposition') || '';
+            } catch (e) {
+                cabecera = '';
+            }
+
+            var encontrado = /filename="?([^"]+)"?/.exec(cabecera);
+
+            return encontrado ? encontrado[1] : 'reporte-diario.xlsx';
+        },
+
+        /** Dispara la descarga del archivo que llegó. */
+        guardarArchivo: function (datos, nombre) {
+            var enlace = document.createElement('a');
+            var objeto = window.URL.createObjectURL(datos);
+
+            enlace.href = objeto;
+            enlace.download = nombre;
+            enlace.style.display = 'none';
+
+            document.body.appendChild(enlace);
+            enlace.click();
+            document.body.removeChild(enlace);
+
+            // Se libera la memoria del archivo descargado.
+            window.setTimeout(function () {
+                window.URL.revokeObjectURL(objeto);
+            }, 1000);
 
             return this;
         }
