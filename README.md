@@ -1,3 +1,45 @@
+# Planificador Diario "Transforma-Conecta"
+
+Programa de Desarrollo Personal "Transforma-Conecta" · Sistema de Planificación Personal.
+
+## Cómo abrirlo en local (XAMPP)
+
+```
+http://localhost:8088/planificadordiario-transformaconecta/
+```
+
+La carpeta del proyecto está dentro de `htdocs`, así que el documento raíz de Apache es
+el propio proyecto. Para que Laravel se sirva desde ahí, y no desde `public/`, hay dos
+archivos en la raíz:
+
+- **`index.php`**: punto de entrada. Reenvía a `public/index.php`, que sigue siendo el
+  arranque real de Laravel (autoload, bootstrap y manejo de la petición).
+- **`.htaccess`**: publica los archivos estáticos de `public/` (css, js, imágenes…) con
+  direcciones limpias y manda las rutas al front controller. Además bloquea por HTTP
+  `.env`, `vendor/`, `storage/`, `config/`… y desactiva los listados de directorio.
+
+Detalles a tener en cuenta:
+
+- `APP_URL` en `.env` apunta a esa dirección (la usan los comandos de `artisan`).
+- Las direcciones antiguas con `/public/` siguen abriendo el sistema
+  (`…/planificadordiario-transformaconecta/public/`), por si hay enlaces guardados.
+- Las reglas son relativas a la carpeta del proyecto: si se renombra o se sube a un
+  hosting dentro de otra carpeta, no hay que cambiar nada.
+- Si se agregan archivos estáticos nuevos en `public/` con una extensión que no esté en
+  la lista del `.htaccess` (por ejemplo `.docx`), hay que añadirla ahí.
+
+## Requisitos
+
+- PHP 8.2 y MySQL (XAMPP). Base de datos `planificador-diario` (ver `.env`).
+- `composer install` para las dependencias de PHP.
+- Las gráficas y los reportes en PDF/Excel se generan al vuelo (dompdf y PhpSpreadsheet);
+  los `*.pdf`, `*.xlsx` y `*.png` que hay sueltos en la raíz son reportes de ejemplo, no
+  forman parte del sistema.
+
+---
+
+## Base del proyecto: Laravel 12
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">

@@ -1,0 +1,80 @@
+# ==========================================================================
+# Planificador Diario "Transforma-Conecta"
+# .htaccess de la raíz del proyecto
+# ==========================================================================
+#
+# Deja el sistema accesible desde la raíz:
+#
+#     http://localhost:8088/planificadordiario-transformaconecta/
+#
+# y no desde public/:
+#
+#     http://localhost:8088/planificadordiario-transformaconecta/public/
+#
+# Laravel necesita que su raíz web sea public/ (ahí viven index.php, css, js,
+# imágenes...). Como el documento raíz de Apache aquí es htdocs, este archivo
+# hace de puente:
+#
+#   * publica los archivos estáticos de public/ con direcciones limpias, y
+#   * manda las rutas al front controller de la raíz (index.php), que a su vez
+#     reenvía a public/index.php.
+#
+# Importante: las rutas no se reescriben hacia public/. Si se hiciera, Laravel
+# recibiría "/public/..." como dirección y no encontraría ninguna ruta (404).
+#
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# 1) Carpetas internas del proyecto: no se sirven por HTTP (403).
+#    Antes quedaban expuestas (vendor/, storage/, config/...).
+# --------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^(app|bootstrap|config|database|node_modules|resources|routes|storage|tests|vendor)(/|$) - [F,L]
+
+    # Archivos ocultos de la raíz: .env, .git, .editorconfig... Se exceptúa
+    # .well-known, que usan los certificados SSL cuando se publique.
+    RewriteCond %{REQUEST_URI} !/\.well-known/
+    RewriteRule (^|/)\. - [F,L]
+
+    # ----------------------------------------------------------------------
+    # 2) Archivos estáticos que viven en public/ (css, js, imágenes, fuentes,
+    #    documentos...). Se publican también desde la raíz para que asset()
+    #    genere direcciones limpias, sin /public/ de por medio:
+    #
+    #        .../planificadordiario-transformaconecta/css/styles.css
+    #
+    #    Sólo se reescriben las peticiones que terminan en una extensión de
+    #    archivo estático; las rutas de Laravel (/diario, /diario/listado...)
+    #    siguen de largo hacia el front controller (punto 3).
+    # ----------------------------------------------------------------------
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(?!public(?:/|$)).+\.(?:css|js|mjs|map|json|txt|xml|webmanifest|png|jpe?g|gif|svg|webp|avif|bmp|ico|woff2?|ttf|eot|otf|pdf|mp4|webm|csv)$ public/$0 [L,NC]
+</IfModule>
+
+# --------------------------------------------------------------------------
+# 3) Rutas de Laravel: las atiende el front controller de la raíz.
+# --------------------------------------------------------------------------
+<IfModule mod_dir.c>
+    DirectoryIndex index.php
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Sin listados de directorio: el contenido del proyecto no se navega.
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
+
+# Archivos sueltos que tampoco deben descargarse.
+<IfModule mod_authz_core.c>
+    <FilesMatch "(?i)^\.env(\..*)?$|^composer\.(json|lock)$|^artisan$|^package(-lock)?\.json$|^phpunit\.xml$|^vite\.config\.js$|\.(log|sqlite|sql|bak|old|ini|dist|sh|ya?ml)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
