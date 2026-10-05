@@ -222,6 +222,11 @@ window.Planificador = window.Planificador || {};
                 return this;
             }
 
+            // El cuadro que sigue al puntero habla de barras que están por
+            // desaparecer: se oculta antes de rehacer el dibujo, si no se
+            // quedaría colgado cuando el horario queda vacío.
+            this.callar();
+
             var svg = [];
             var rango = Math.max(1, datos.fin - datos.inicio);
             var anchoUtil = this.derecha - this.izquierda;

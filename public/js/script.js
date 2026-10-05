@@ -48,6 +48,9 @@ window.Planificador = window.Planificador || {};
         contadorFilas: 0,
         guardando: false,
 
+        /** Fecha con la que se abrió el formulario; la restituye "Limpiar". */
+        fechaInicial: '',
+
         /* ==================================================================
            Arranque
            ================================================================== */
@@ -110,6 +113,9 @@ window.Planificador = window.Planificador || {};
 
             $fecha.on('change blur', $.proxy(this.marcarDia, this));
 
+            // Se recuerda la fecha de apertura: "Limpiar" la restituye tal cual.
+            this.fechaInicial = $.trim(String($fecha.val() || ''));
+
             // Si la vista trae la fecha puesta, el día se marca de una vez.
             this.marcarDia();
         },
@@ -163,7 +169,12 @@ window.Planificador = window.Planificador || {};
             });
 
             $(this.opciones.selectorTodos).on('change', function () {
-                $(self.opciones.selectorCheckFila).prop('checked', $(this).is(':checked'));
+                // El "change" se dispara a mano: marcar las casillas por código
+                // no avisa a nadie, y el gráfico pinta las cumplidas más nítidas.
+                $(self.opciones.selectorCheckFila)
+                    .prop('checked', $(this).is(':checked'))
+                    .trigger('change');
+
                 $(this).prop('indeterminate', false);
             });
 
@@ -268,15 +279,15 @@ window.Planificador = window.Planificador || {};
         /**
          * Vacía el formulario y lo deja como recién abierto.
          *
-         * La única excepción es la fecha: en la ruta /diario/today el campo es
-         * de sólo lectura y se queda con la fecha de hoy, así que tampoco se
-         * desmarca el día. En /diario la fecha sí se limpia.
+         * La única excepción es la fecha, que vuelve a la que tenía la pantalla
+         * al abrirse: en /diario queda en blanco; en /diario/today se queda con
+         * la fecha de hoy y al modificar con la del día que se está editando.
+         * En los dos últimos casos el día tampoco se desmarca.
          */
         limpiar: function () {
             var $formulario = $(this.opciones.selectorFormulario);
             var $fecha = $(this.opciones.selectorFecha);
             var formulario = $formulario.get(0);
-            var fechaBloqueada = $fecha.prop('readonly');
 
             if (formulario) {
                 formulario.reset();
@@ -287,14 +298,24 @@ window.Planificador = window.Planificador || {};
 
             $(this.opciones.selectorTodos).prop('checked', false).prop('indeterminate', false);
 
-            if (! fechaBloqueada && $.fn.datepicker && $fecha.data('datepicker')) {
-                $fecha.datepicker('update', '');
+            // La fecha vuelve a como estaba al abrir el formulario: en /diario
+            // queda en blanco; en /diario/today y al modificar se queda con la
+            // fecha del día abierto, que es la identidad del registro.
+            if ($.fn.datepicker && $fecha.data('datepicker')) {
+                $fecha.datepicker('update', this.fechaInicial);
             }
 
             this.sincronizarDetalles();
             this.limpiarErrores();
             this.mostrarErrores([]);
             this.marcarDia();
+
+            // El gráfico se rehace solo con los cambios del horario, pero aquí
+            // las filas se quitan por código y eso no dispara ningún evento:
+            // hay que avisarle para que vuelva al estado vacío.
+            if (P.Grafico) {
+                P.Grafico.actualizar();
+            }
 
             return this;
         },

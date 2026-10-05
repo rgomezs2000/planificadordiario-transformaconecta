@@ -413,11 +413,9 @@
                     <i class="bi bi-save" aria-hidden="true"></i> Guardar
                 </button>
 
-                @unless ($esEdicion)
-                    <button type="button" class="tc-boton tc-boton--turquesa" id="formulario-limpiar">
-                        <i class="bi bi-eraser" aria-hidden="true"></i> Limpiar
-                    </button>
-                @endunless
+                <button type="button" class="tc-boton tc-boton--turquesa" id="formulario-limpiar">
+                    <i class="bi bi-eraser" aria-hidden="true"></i> Limpiar
+                </button>
 
                 <a class="tc-boton tc-boton--contorno"
                    href="{{ $esEdicion ? route('diario.listado') : route('home') }}">
