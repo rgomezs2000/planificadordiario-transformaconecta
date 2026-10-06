@@ -1,6 +1,7 @@
 # Planificador Diario "Transforma-Conecta"
 
-**Versión 1.0 (MVP) · versión base** — ver [§27.2](#272-versión-10-mvp-versión-base)
+**Versión 1.02** (manejo de errores) · sobre la base **1.0 (MVP)** — ver
+[§27.3](#273-versión-102-manejo-de-errores) y [§27.2](#272-versión-10-mvp-versión-base)
 
 Sistema de Planificación Personal del **Programa de Desarrollo Personal "Transforma-Conecta"**.
 
@@ -63,6 +64,8 @@ http://localhost:8088/planificadordiario-transformaconecta/
     - [12.12 Front-end compartido](#1212-front-end-compartido)
     - [12.13 Plantilla base y experiencia de uso](#1213-plantilla-base-y-experiencia-de-uso)
     - [12.14 Arranque y publicación en Apache](#1214-arranque-y-publicación-en-apache)
+    - [12.15 Página de errores](#1215-página-de-errores)
+    - [12.16 Bitácora de errores y logs diarios](#1216-bitácora-de-errores-y-logs-diarios)
 13. [Rutas y endpoints](#13-rutas-y-endpoints)
 14. [Flujos paso a paso](#14-flujos-paso-a-paso)
 15. [Reglas de negocio y validaciones](#15-reglas-de-negocio-y-validaciones)
@@ -80,7 +83,8 @@ http://localhost:8088/planificadordiario-transformaconecta/
 27. [Estado del proyecto y hoja de ruta](#27-estado-del-proyecto-y-hoja-de-ruta)
     - [27.1 Estado actual](#271-estado-actual)
     - [27.2 Versión 1.0: MVP (versión base)](#272-versión-10-mvp-versión-base)
-    - [27.3 Mejoras propuestas (orden sugerido)](#273-mejoras-propuestas-orden-sugerido)
+    - [27.3 Versión 1.02: manejo de errores](#273-versión-102-manejo-de-errores)
+    - [27.4 Mejoras propuestas (orden sugerido)](#274-mejoras-propuestas-orden-sugerido)
 28. [Créditos y licencia](#28-créditos-y-licencia)
 
 ---
@@ -91,7 +95,7 @@ http://localhost:8088/planificadordiario-transformaconecta/
 | --- | --- |
 | Nombre del sistema | Planificador Diario "Transforma-Conecta" |
 | Nombre en pantalla | Mi Planificador Diario |
-| **Versión actual** | **1.0 (MVP)** — versión base (ver [§27.2](#272-versión-10-mvp-versión-base)) |
+| **Versión actual** | **1.02** — manejo de errores, sobre la base **1.0 (MVP)** (ver [§27.3](#273-versión-102-manejo-de-errores) y [§27.2](#272-versión-10-mvp-versión-base)) |
 | Programa al que pertenece | Programa de Desarrollo Personal "Transforma-Conecta" |
 | Lema institucional | ORGÁNIZATE · ACTÚA · AVANZA |
 | Tipo de aplicación | Web monolítica (Laravel 12), servidor-renderizada, con mejoras por AJAX |
@@ -241,6 +245,12 @@ para sostener el proceso.
 - Modificar un diario guardado (`/diario/{id}/editar`).
 - Eliminar un diario, con confirmación previa (`DELETE /diario/{id}`).
 - Un único diario por fecha (validación de unicidad).
+- **Página de errores propia** (`/error/{codigo}`) que explica los códigos por familia (3xx,
+  4xx y 5xx) y que es la que aparece cuando una página no existe, el acceso no está permitido,
+  la sesión venció o el servidor falla.
+- **Registro de errores con detalle**: cada fallo queda anotado con su **código de incidente**
+  en `storage/logs/errores-AAAA-MM-DD.log` (dirección, IP, ruta, excepción y traza recortada);
+  los logs rotan por día y conservan los anteriores.
 
 **Secciones del día**
 
@@ -350,7 +360,7 @@ institucional y se repiten en pantalla, en el PDF y en el Excel.
 
 Aplicación **monolítica Laravel 12** con patrón **MVC enriquecido**:
 
-- **Rutas** (`routes/web.php`) → declaran los 14 endpoints web detrás del middleware `web`.
+- **Rutas** (`routes/web.php`) → declaran los 15 endpoints web detrás del middleware `web`.
 - **Controladores** → delgados: validan, invocan y arman la respuesta (HTML, JSON, PDF o
   XLSX). Comparten el trait `DatosDelFormulario` para los datos de la vista del formulario.
 - **Modelo de dominio** (`App\Models\DailyPlan`) → concentra **todas** las consultas y las
@@ -512,6 +522,9 @@ planificadordiario-transformaconecta/
 ├── app/                                Código de la aplicación (PSR-4 App\)
 │   ├── Excel/
 │   │   └── ReporteDiarioExport.php     Reporte detallado .xlsx (25 columnas)
+│   ├── Errores/
+│   │   ├── CatalogoDeErrores.php       Texto de cada familia y código de error HTTP
+│   │   └── RegistroDeErrores.php       Bitácora detallada en el log diario de errores
 │   ├── Filtros/
 │   │   └── Periodo.php                 Semana/quincena/mes/trimestre/semestre/año/rango → fechas
 │   ├── Graficos/
@@ -526,6 +539,7 @@ planificadordiario-transformaconecta/
 │   │       ├── Controller.php              Controlador base de Laravel
 │   │       ├── DailyController.php         Formulario en blanco y "hoy"
 │   │       ├── DailyPlanController.php     Listar, crear, ver, editar, imprimir, exportar, eliminar
+│   │       ├── ErrorController.php         Página de errores: /error/{codigo}
 │   │       └── HomeController.php          Portada con el menú principal
 │   ├── Models/                         Eloquent (DailyPlan es el modelo eje)
 │   │   ├── ActionBlock.php             Bloque de acción ejecutado
@@ -585,10 +599,11 @@ planificadordiario-transformaconecta/
 │       │   ├── _modal_resumen.blade.php   Modal de marca de agua del resumen
 │       │   ├── pdf.blade.php           Documento HTML del PDF del día
 │       │   └── resumen.blade.php       Documento HTML del resumen de desempeño
+│       ├── errores/index.blade.php     Página de errores (3xx, 4xx y 5xx)
 │       └── welcome.blade.php           Vista de bienvenida de Laravel (sin ruta que la use)
 │
 ├── routes/
-│   ├── web.php                         Las 14 rutas del sistema
+│   ├── web.php                         Las 15 rutas del sistema
 │   └── console.php                     Comando de ejemplo de Laravel
 │
 ├── storage/                            Logs, sesiones y caché de vistas (escribible)
@@ -1569,6 +1584,157 @@ sin romper el acceso tradicional con `/public/`.
 
 ---
 
+### 12.15 Página de errores
+
+**Propósito.** Mostrar en pantalla, con la identidad del sistema, qué pasó cuando algo falla:
+la ruta `/error/{codigo}` explica cualquier código HTTP agrupado por familia, y el **mismo**
+diseño es el que aparece cuando de verdad ocurre un error (una página que no existe, un acceso
+no permitido, la sesión vencida o una falla del servidor).
+
+**Archivos.**
+
+| Archivo | Rol |
+| --- | --- |
+| `app/Http/Controllers/ErrorController.php` | `index(int $codigo)`: arma la respuesta con el código real |
+| `app/Errores/CatalogoDeErrores.php` | El texto de cada familia y de cada código (título, mensaje, salidas, icono y color) |
+| `resources/views/errores/index.blade.php` | La vista, sobre la plantilla institucional |
+| `routes/web.php` | `GET /error/{codigo}` (nombre `error`), con el parámetro restringido a números |
+| `bootstrap/app.php` | Manejador de excepciones que dibuja los errores reales con esta misma vista |
+| `public/css/styles.css` | Bloque 8: estilos `.tf-error*` (azul 3xx, naranja 4xx, rojo 5xx) |
+
+**Familias y códigos.**
+
+| Familia | Qué significa | Códigos con texto propio |
+| --- | --- | --- |
+| **300** Redirección (azul) | El servidor te lleva a otra dirección; no es una falla | 300, 301, 302, 303, 304, 307, 308 |
+| **400** Error del cliente (naranja) | Lo pedido no es válido, no está permitido o ya no existe | 400, 401, 402, 403, 404, 405, 406, 408, 409, 410, 413, 414, 415, 419, 422, 429, 451 |
+| **500** Error del servidor (rojo) | La solicitud llegó bien, pero el sistema no pudo completarla | 500, 501, 502, 503, 504, 505, 507 |
+
+Los códigos que no están en la lista **no quedan sin texto**: heredan el mensaje y las salidas
+de su familia (así 418 o 507 ya salen explicados). Un valor fuera de 300-599 se muestra como
+**500**, avisando en pantalla que se ajustó.
+
+**Paso a paso.**
+
+1. El navegador pide `/error/404` (o cualquier otro código). La ruta solo acepta dígitos
+   (`whereNumber`), así que `/error/abc` cae en un 404 normal del sistema.
+2. `ErrorController@index` le pide los datos a `CatalogoDeErrores::datos($codigo)`, que
+   normaliza el código, calcula su familia (`intdiv($codigo, 100) * 100`) y completa lo que
+   falte con el texto de esa familia.
+3. La respuesta se devuelve **con el mismo estado HTTP que explica** (`response()->view(...,
+   $error['codigo'])`): `/error/403` contesta 403, `/error/500` contesta 500. Así el navegador
+   y cualquier monitorización ven el código real y no un 200 disfrazado. Se agrega
+   `Cache-Control: no-store` para que el aviso no quede guardado.
+4. La vista pinta la tarjeta: chip con la familia y su icono, el número grande, el título, la
+   explicación, la nota de "se ajustó" cuando corresponde, la lista de **qué puedes hacer** y
+   cuatro salidas: *Volver al inicio*, *Consultar mis diarios*, *Crear un diario* y *Reintentar*
+   (recarga la misma dirección).
+
+**Captura de los errores reales (lo que hace que la página sirva).** En `bootstrap/app.php` se
+registraron dos manejadores, después del de validación:
+
+| Manejador | Cuándo actúa | Qué responde |
+| --- | --- | --- |
+| `HttpExceptionInterface` | 403, 404, 405, 419, 429 y demás errores HTTP que se navegan | La página del sistema con el código real. Si la petición espera JSON, no interviene (devuelve `null`) |
+| `Throwable` (cualquier otra excepción) | Errores 500 | La página del sistema **solo con `APP_DEBUG=false`**; con la depuración encendida se deja la pantalla de Laravel, que dice qué pasó y dónde. `ValidationException` queda excluida para no romper el volver-al-formulario-con-errores |
+
+**Decisiones y detalles.**
+
+- **Un solo diseño de error.** La ruta y el manejador usan el mismo controlador y la misma
+  vista: no hay dos pantallas de error que mantener.
+- **El AJAX no se toca.** Las peticiones que esperan JSON (`Accept: application/json`, las que
+  hace DataTables, el guardado del formulario, el reporte y el resumen) siguen recibiendo JSON,
+  porque los manejadores salen antes de responder. Verificado: un 404 pedido como JSON devuelve
+  `application/json` y el listado sigue contestando `{"ok":true,…}`.
+- **La validación tiene su propio camino.** `ValidationException` no entra en el manejador
+  genérico: en las peticiones normales Laravel vuelve al formulario con los errores, y en las
+  AJAX responde el sobre `{ ok:false, message, errors }` (422).
+- **Con depuración encendida** (`APP_DEBUG=true`, el valor local) los errores HTTP igual usan la
+  página institucional, pero un 500 inesperado conserva la pantalla de depuración para no
+  perder el detalle mientras se desarrolla.
+- **Los 3xx no son errores.** Una redirección real nunca llega al manejador de excepciones: el
+  navegador la sigue y listo. La familia 300 existe en `/error/{codigo}` para poder mostrar la
+  explicación cuando se pide a propósito.
+
+---
+
+### 12.16 Bitácora de errores y logs diarios
+
+**Propósito.** Que ningún fallo se pierda y que, cuando haya que investigarlo, esté todo dicho:
+la clase `RegistroDeErrores` anota el error con el máximo detalle en un log propio que **rota
+por día**, y devuelve un **código de incidente** que se muestra en la página de error para poder
+cruzar lo que vio la persona con lo que quedó registrado.
+
+**Archivos.**
+
+| Archivo | Rol |
+| --- | --- |
+| `app/Errores/RegistroDeErrores.php` | Arma y escribe la entrada detallada; genera el código de incidente |
+| `config/logging.php` | Canal `errores` (driver `daily`) y los días que se conserva |
+| `.env` / `.env.example` | `LOG_STACK=daily`, `LOG_DAILY_DAYS=30` y `LOG_ERRORES_DAYS=60` |
+| `bootstrap/app.php` | Registra los errores que atiende el manejador de excepciones |
+| `app/Http/Controllers/DailyPlanController.php` | Registra lo que atrapan sus `try/catch` |
+| `app/Models/DailyPlan.php` | Registra lo que falla dentro de una transacción |
+
+**Archivos de log (uno por día).**
+
+| Archivo | Qué guarda | Rotación |
+| --- | --- | --- |
+| `storage/logs/laravel-AAAA-MM-DD.log` | El log general de Laravel (canal `daily` desde la V 1.02) | Diaria; 30 días (`LOG_DAILY_DAYS`) |
+| `storage/logs/errores-AAAA-MM-DD.log` | El detalle del manejo de errores (canal `errores`) | Diaria; 60 días (`LOG_ERRORES_DAYS`) |
+| `storage/logs/laravel.log` | El archivo del esquema anterior (`single`); queda como histórico y no recibe entradas nuevas | — |
+
+**Qué se guarda de cada error.**
+
+```
+[2026-10-06 11:53:08] local.WARNING: [QY102A4U] Error 404 (Página no encontrada) · manejador · NotFoundHttpException
+{"incidente":"QY102A4U","origen":"manejador","codigo":404,"familia":400,"familia_titulo":"Error del cliente",
+ "titulo":"Página no encontrada","excepcion":"…NotFoundHttpException","mensaje":"The route … could not be found.",
+ "archivo":"…/AbstractRouteCollection.php:44","metodo":"GET","url":"http://…/ruta?pagina=3",
+ "ruta":null,"accion":null,"ip":"::1","navegador":"Mozilla/5.0 …","referencia":null,
+ "espera_json":false,"traza":["#0 …","#1 …", …12 líneas]}
+```
+
+| Dato | Detalle |
+| --- | --- |
+| Código de incidente | 8 caracteres, único por error; **encabeza la entrada y se muestra en la página** |
+| Origen | `manejador` (excepción), `controlador` (`try/catch`) o `modelo` (transacción) |
+| Error | Código, familia, título, clase de la excepción, mensaje, archivo y línea |
+| Petición | Método, URL completa, nombre y acción de la ruta, IP, navegador, referencia y si esperaba JSON |
+| Traza | Las **12 primeras líneas**, recortadas, para no inflar el archivo |
+| Contexto | Lo que aporta quien detecta el error: operación, id del diario, filtros, fecha… |
+| Nivel | `error` para 5xx, `warning` para 4xx |
+
+**Paso a paso.**
+
+1. Algo falla: una excepción no controlada, un `catch` del controlador o una transacción del
+   modelo.
+2. `RegistroDeErrores::registrar()` genera el incidente, arma el contexto (recortando los textos
+   largos y la traza) y escribe con `Log::channel('errores')` en el archivo del día.
+3. El manejador de `bootstrap/app.php` recibe ese incidente y lo pasa a la página de error, que
+   lo muestra ("Código de incidente XXXXXXXX · el detalle quedó registrado en el log de errores").
+4. Los `try/catch` de los controladores siguen llamando a `report()` —el log general, como
+   siempre— y además registran el detalle con `registrarFallo($e, 'operación', $contexto)`; las
+   transacciones del modelo usan `RegistroDeErrores::deModelo(...)` con el nombre de la operación.
+5. Laravel rota los dos archivos por su cuenta: al empezar un día nuevo estrena
+   `laravel-AAAA-MM-DD.log` y `errores-AAAA-MM-DD.log`, y borra los que superan los días
+   configurados.
+
+**Cuidados a propósito.**
+
+- **El registro nunca puede tumbar la respuesta.** Si el log no se puede escribir (permisos,
+  disco lleno), el fallo se anota con `error_log()` y la respuesta sigue su curso: no hay
+  recursión ni error en cascada.
+- **No se guarda el cuerpo de la petición.** El contenido del formulario son los datos
+  personales del diario; se registran la dirección, la ruta, la IP y el contexto explícito, no
+  los campos enviados.
+- **Se recorta todo.** Mensajes (500 caracteres), textos del contexto (300), navegador (200) y
+  traza (12 líneas): el log sirve para diagnosticar, no para llenar el disco.
+- **Niveles separados.** Los 4xx quedan como `warning` y los 5xx como `error`, así se pueden
+  filtrar sin ruido.
+
+---
+
 ## 13. Rutas y endpoints
 
 Todas las rutas viven en `routes/web.php` y pasan por el middleware `web` (sesión y CSRF).
@@ -1578,6 +1744,7 @@ Las que responde AJAX devuelven JSON con el sobre `{ ok, message, data }` o
 | Método | URI | Nombre | Acción | Respuesta |
 | --- | --- | --- | --- | --- |
 | GET | `/` | `home` | `HomeController@index` | Vista `home.index` (portada) |
+| GET | `/error/{codigo}` | `error` | `ErrorController@index` | Vista `errores.index`, con **el mismo estado HTTP** que explica (404 contesta 404) |
 | GET | `/diario` | `diario.index` | `DailyController@index` | Vista `diario.formulario` (crear) |
 | GET | `/diario/today` | `diario.today` | `DailyController@today` | Formulario con la fecha de hoy bloqueada |
 | GET | `/diario/listado` | `diario.listado` | `DailyPlanController@index` | Vista `diario.index` (tabla y filtros) |
@@ -1596,7 +1763,8 @@ Las que responde AJAX devuelven JSON con el sobre `{ ok, message, data }` o
 **Orden de las rutas.** Las rutas con identificador van **al final** del grupo y el parámetro
 está restringido a números (`Route::whereNumber('dailyPlan')`): así `/today`, `/listado`,
 `/tabla`, `/reporte` y `/resumen` no se confunden con un id, y cualquier otro valor cae en un
-404.
+404. La ruta `/error/{codigo}` también restringe el parámetro a números: `/error/abc` no
+coincide y termina en el 404 normal del sistema.
 
 **Parámetros de los filtros** (los aceptan `diario.tabla`, `diario.reporte` y `diario.resumen`):
 
@@ -1618,7 +1786,7 @@ está restringido a números (`Route::whereNumber('dailyPlan')`): así `/today`,
 **Códigos de respuesta usados.** 200 (éxito), 201 (día creado), 404 (no existe, o reporte sin
 datos que coincidan), 422 (validación), 500 (error inesperado reportado al log).
 
-**Rutas que agrega el framework.** `php artisan route:list` muestra 17 rutas: las 14 de la
+**Rutas que agrega el framework.** `php artisan route:list` muestra 18 rutas: las 15 de la
 aplicación, la de *health check* (`GET /up`, definida con `health: '/up'` en
 `bootstrap/app.php`) y dos que publica Laravel para el disco `local` cuando
 `filesystems.disks.local.serve` es `true` (`GET storage/{path}` y `PUT storage/{path}`). Las de
@@ -2061,11 +2229,14 @@ Valores verificados en el entorno de desarrollo de referencia (XAMPP, 06/10/2026
 | `GET /diario` | Formulario con los 3 objetivos, 6 ítems de preparación, 5 preguntas y los catálogos |
 | `GET /up` | **200** (`Application up`) |
 | `GET /css/styles.css` | **200**, mismo tamaño que `public/css/styles.css` (44.462 bytes) |
+| `GET /error/404` | **404** con la página de errores del sistema ("Página no encontrada") |
+| `GET /ruta-que-no-existe` | **404** con la misma página: la excepción real se dibuja con el módulo de errores |
 | `GET /.env` | **403** (bloqueado por el `.htaccess` de la raíz) |
 | `GET /vendor/` | **403** (bloqueado por el `.htaccess` de la raíz) |
-| `php artisan route:list` | 17 rutas (14 de la aplicación + `/up` + 2 que publica el framework para el disco `local`) |
+| `php artisan route:list` | 18 rutas (15 de la aplicación + `/up` + 2 que publica el framework para el disco `local`) |
 | `php artisan test` | 1 prueba `Unit` correcta y **1 prueba `Feature` fallando** (ver [§24](#24-pruebas)) |
-| `git status --short` | Sin salida: árbol de trabajo limpio |
+| `git status --short` | Con los cambios de la V 1.02 sin confirmar (ver [§27.3](#273-versión-102-manejo-de-errores)) |
+| `storage/logs/` tras provocar un error | Se crean `errores-AAAA-MM-DD.log` y `laravel-AAAA-MM-DD.log` (un archivo por día) |
 
 ---
 
@@ -2153,7 +2324,8 @@ Variables de `.env` (nombres y valores funcionales; no se reproducen secretos):
 | `APP_LOCALE` | `en` | Locale de Laravel (la interfaz no depende de él) |
 | `APP_FALLBACK_LOCALE` | `es` | Locale de respaldo |
 | `APP_FAKER_LOCALE` | `es_VE` | Locale de los datos falsos |
-| `LOG_CHANNEL` / `LOG_STACK` / `LOG_LEVEL` | `stack` / `single` / `debug` | Registro en `storage/logs/laravel.log` |
+| `LOG_CHANNEL` / `LOG_STACK` / `LOG_LEVEL` | `stack` / `daily` / `debug` | Logs **diarios** en `storage/logs/laravel-AAAA-MM-DD.log` |
+| `LOG_DAILY_DAYS` / `LOG_ERRORES_DAYS` | `30` / `60` | Días que se conservan el log general y el de errores |
 | `DB_CONNECTION` | `mysql` | Motor de base de datos |
 | `DB_HOST` / `DB_PORT` | `localhost` / `3306` | Servidor MySQL |
 | `DB_DATABASE` | `planificador-diario` | Base de datos del sistema |
@@ -2190,7 +2362,7 @@ de hoy, los rangos de fechas y las marcas de generación de los documentos) usa
 | `SESSION_SECURE_COOKIE` | No definida | La cookie no exige HTTPS (coherente con el uso local). En producción debe activarse |
 | `config/filesystems.php` | Disco `local` con `serve => true` | Es lo que crea las rutas `storage/{path}` del framework (ver [§21](#21-seguridad)). Además, `public/storage` **no existe**: nunca se ejecutó `php artisan storage:link` (no hace falta, el sistema no guarda archivos) |
 | Caché de configuración | No generada | `bootstrap/cache/` solo tiene los archivos base; en desarrollo es correcto, en producción conviene `php artisan config:cache` y `route:cache` |
-| Logs | Canal `stack` → `single`, nivel `debug` | Todo va a `storage/logs/laravel.log`. En producción: canal `daily` y `LOG_LEVEL=warning` |
+| Logs | Dos canales `daily`, con retención propia | El general va a `storage/logs/laravel-AAAA-MM-DD.log` (30 días) y el detalle de errores a `storage/logs/errores-AAAA-MM-DD.log` (60 días). El archivo `laravel.log` del esquema anterior queda como histórico. En producción conviene `LOG_LEVEL=warning` |
 | Tareas programadas y colas | No hay | `routes/console.php` solo tiene el comando de ejemplo `inspire`; no hay `app/Jobs` ni `Schedule::`; la conexión de cola existe pero nadie despacha trabajos |
 | Proveedores | Solo `AppServiceProvider`, con `register()` y `boot()` vacíos | Sin *bindings* ni personalizaciones; los alias no se declaran (Laravel 12 resuelve los del framework) |
 | Metadatos de `composer.json` | `name: laravel/laravel`, descripción del esqueleto, `license: MIT` | El proyecto nunca se renombró, y `license` contradice al archivo `LICENSE`, que es **Unlicense** (ver [§28](#28-créditos-y-licencia)) |
@@ -2223,6 +2395,10 @@ si el sistema se publica en internet, hay que agregar autenticación (ver
 | **Transacciones** con `report()` de errores al log, sin exponer trazas al usuario | `DailyPlan::enTransaccion()` y los `try/catch` de los controladores |
 | **Documentos sin caché** (`no-store`) | PDF del día y resumen |
 | **Errores de validación AJAX** con el mismo sobre JSON, sin redirecciones confusas | `bootstrap/app.php` |
+| **Página de error sin datos técnicos**: el aviso institucional explica el código en lenguaje llano y no muestra trazas, rutas del servidor ni consultas | `errores.index` y el manejador de excepciones (con `APP_DEBUG=false`, el 500 usa esa página) |
+| **Captura de errores HTTP navegados** (403, 404, 405, 419, 429…) con el estado real | `bootstrap/app.php` + `ErrorController` |
+| **Bitácora de errores sin datos personales**: cada fallo queda con incidente, URL, IP, ruta y traza, pero **nunca** con el cuerpo del formulario; los textos y la traza se recortan | `RegistroDeErrores` + canal `errores` (log diario) |
+| **Rotación diaria de los logs**, con retención propia por canal | `config/logging.php` (driver `daily`) y `LOG_DAILY_DAYS` / `LOG_ERRORES_DAYS` |
 
 ### 21.3 Hallazgos de seguridad a resolver
 
@@ -2381,6 +2557,49 @@ Tras actualizar dompdf o PhpSpreadsheet, conviene volver a comprobar los tres do
 del día, Excel y resumen de desempeño) porque son las salidas más sensibles a cambios de
 librería.
 
+### 23.9 Revisar los logs
+
+Los logs **rotan por día**: cada jornada estrena archivo y los anteriores se conservan los días
+configurados (30 para el general, 60 para el de errores).
+
+| Archivo | Qué mirar |
+| --- | --- |
+| `storage/logs/errores-AAAA-MM-DD.log` | El detalle de cada error: incidente, código, URL, IP, ruta, traza y contexto de la operación. **Es el primero que conviene abrir** |
+| `storage/logs/laravel-AAAA-MM-DD.log` | El log general de Laravel (excepciones no controladas y lo que se anota con `report()`) |
+| `storage/logs/laravel.log` | Archivo del esquema anterior (canal `single`); queda como histórico |
+
+- Para encontrar un incidente concreto, se busca el **código que muestra la página de error**
+  (por ejemplo `QY102A4U`) en `errores-*.log`.
+- En PowerShell: `Select-String -Path storage\logs\errores-*.log -Pattern 'QY102A4U'`.
+- Los 4xx se anotan como `WARNING` y los 5xx como `ERROR`, así se pueden filtrar por nivel.
+- Si el log no se puede escribir (permisos de `storage/logs`), el sistema **no falla**: deja el
+  aviso en el log de PHP y la respuesta sigue su curso. En ese caso, revisar los permisos.
+- Para vaciar los logs viejos, basta con borrar los archivos `*.log` que ya no se necesiten;
+  Laravel crea el del día cuando haga falta.
+
+```
+# Ver los últimos errores registrados
+Get-Content storage\logs\errores-*.log -Tail 20
+
+# Buscar por código de incidente
+Select-String -Path storage\logs\errores-*.log -Pattern 'QY102A4U'
+```
+
+### 23.10 Cambiar la retención o el nivel de los logs
+
+Todo se ajusta en `.env`, sin tocar código:
+
+```
+LOG_STACK=daily        # archivo nuevo cada día
+LOG_DAILY_DAYS=30      # días que se conserva el log general
+LOG_ERRORES_DAYS=60    # días que se conserva el log de errores
+LOG_LEVEL=debug        # debug en local; warning o error en producción
+```
+
+El canal `errores` está definido en `config/logging.php`; si se quiere cambiar su nombre de
+archivo o su nivel, ese es el lugar. Después de tocar el `.env`, ejecutar
+`php artisan config:clear`.
+
 ---
 
 ## 24. Pruebas
@@ -2463,6 +2682,14 @@ de datos de desarrollo** (por eso, sin migrar la base en memoria, cualquier cons
 | El navegador muestra un PDF viejo | Caché del navegador | El sistema envía `no-store`; forzar recarga (Ctrl+F5) para descartar |
 | Al borrar salen dos avisos | Se activó el aviso automático del ayudante | No usar `avisoExito:true` cuando la vista muestra su propia alerta (ya resuelto en el listado) |
 | Error 403 al pedir `/storage/...` o `/.env` | Protección intencional del `.htaccess` | Es el comportamiento esperado |
+| Aparece la página "La sesión expiró" (419) al guardar | Pasó demasiado tiempo desde que se abrió el formulario | Volver a abrir el diario y guardar de nuevo; la página de errores tiene el botón *Reintentar* |
+| Cualquier dirección desconocida muestra la página de errores del sistema | Es el módulo de errores capturando el 404 | Es el comportamiento esperado; se puede ver un código concreto en `/error/404`, `/error/403`, `/error/500` |
+| En producción aparece la página del sistema en lugar del detalle del 500 | El manejador solo dibuja el 500 cuando `APP_DEBUG=false` | Es lo buscado: sin depuración no se exponen trazas. Para verlas, `storage/logs/laravel.log` |
+| Con `APP_DEBUG=true` un 500 sigue mostrando la pantalla de Laravel | Decisión de diseño del manejador | Es intencional, para no perder el detalle mientras se desarrolla; los 403, 404, 405 y 419 sí usan la página del sistema |
+| La página de error muestra un "Código de incidente" | Es el identificador con el que quedó anotado ese fallo | Buscarlo en `storage/logs/errores-AAAA-MM-DD.log` para ver el detalle completo |
+| Ya no hay entradas nuevas en `storage/logs/laravel.log` | Desde la V 1.02 el log general es diario | El archivo vigente es `storage/logs/laravel-AAAA-MM-DD.log`; el viejo queda como histórico |
+| No aparece el archivo `errores-AAAA-MM-DD.log` | Solo se crea cuando hay un error registrado | Provocar una dirección inexistente (`/error/404` no cuenta: se registra al pedir una ruta inválida) o revisar los permisos de `storage/logs` |
+| El log no se escribe y la página igual responde | El registro está protegido a propósito | Revisar permisos de `storage/logs`; el aviso queda en el log de PHP del servidor |
 | Aparece "SPECIMEN" en un PDF | Se marcó la casilla de documento de muestra | Volver a generar sin marcar la casilla |
 | `php artisan` avisa de `APP_KEY` faltante | `.env` sin clave | `php artisan key:generate` |
 | Los logs crecen sin control | `LOG_LEVEL=debug` en local | En producción, `LOG_LEVEL=warning` o `error` y rotación de `storage/logs` |
@@ -2498,7 +2725,7 @@ de datos de desarrollo** (por eso, sin migrar la base en memoria, cualquier cons
 
 ### 27.1 Estado actual
 
-**Implementado y funcionando en la V 1.0 (MVP):**
+**Implementado y funcionando en la versión actual (V 1.02, sobre la base V 1.0):**
 
 - Registro completo del día con las ocho secciones de la hoja institucional.
 - Crear, ver, modificar y eliminar diarios, con validación en navegador y servidor.
@@ -2510,12 +2737,16 @@ de datos de desarrollo** (por eso, sin migrar la base en memoria, cualquier cons
   gráficos.
 - Catálogos sembrados y ampliables; publicación en la raíz del proyecto con bloqueos de
   seguridad.
+- Página de errores propia para los códigos 3xx, 4xx y 5xx, usada también como pantalla cuando
+  ocurre un error real de navegación.
 
 **Historial de versiones (git, rama `main`):** el proyecto se desarrolló en etapas sucesivas:
 inicialización del repositorio, creación de modelos y controladores, primera fase del MVP,
 MVP del planificador completo, mejoras de guardado (persistencia de secciones opcionales y
-confirmación antes de enviar) y limpieza del gráfico. Todo eso culminó en la **V 1.0 (MVP)**,
-que se detalla en [§27.2](#272-versión-10-mvp-versión-base). Último commit: `ece6edd`.
+confirmación antes de enviar) y limpieza del gráfico. Todo eso culminó en la **V 1.0 (MVP)**
+(commit `ece6edd`), que se detalla en [§27.2](#272-versión-10-mvp-versión-base), y sobre ella se
+publicó la actualización **V 1.02** de manejo de errores, que se detalla en
+[§27.3](#273-versión-102-manejo-de-errores). Último commit: `db3d44f`.
 
 **Estado del repositorio (verificado el 06/10/2026):**
 
@@ -2523,16 +2754,17 @@ que se detalla en [§27.2](#272-versión-10-mvp-versión-base). Último commit: 
 | --- | --- |
 | Rama | `main`, siguiendo a `origin/main` |
 | Remoto | `https://github.com/rgomezs2000/planificadordiario-transformaconecta.git` |
-| Último commit | `ece6edd` — "se implementa limpieza del grafico" (05/10/2026), igual a `origin/main` |
-| Cantidad de commits | 14 |
-| Árbol de trabajo | Limpio (sin archivos modificados ni sin seguimiento) |
+| Último commit | `db3d44f` — "documentacion del sistema a partir del MVP" (06/10/2026) |
+| Cantidad de commits | 15 |
+| Árbol de trabajo | Con los cambios de la **V 1.02** sin confirmar (el módulo de errores) |
 | Pendientes de higiene | `.tmp-chrome4` versionado (ver [§10.1](#101-archivos-sueltos-en-la-raíz-y-carpeta-tmp-chrome4)), 12 artefactos de ejemplo en la raíz y `database/database.sqlite` en disco |
 
 ### 27.2 Versión 1.0: MVP (versión base)
 
 La **V 1.0** es la **versión base del sistema**: el MVP (producto mínimo viable) que se
-construyó, se probó y está en uso. **Todo lo que describe este README corresponde a la
-V 1.0**: no hay versiones anteriores ni posteriores publicadas.
+construyó, se probó y está en uso. Es la base sobre la que se publicó la actualización
+**V 1.02** (manejo de errores, [§27.3](#273-versión-102-manejo-de-errores)); todo lo demás que
+describe este README corresponde a esta versión base.
 
 | Dato | Valor |
 | --- | --- |
@@ -2544,6 +2776,11 @@ V 1.0**: no hay versiones anteriores ni posteriores publicadas.
 | Alcance de la versión | Un solo usuario y sin autenticación: registro diario completo, consulta con filtros, tres salidas documentales y publicación en Apache |
 | Base de datos | `planificador-diario` (MySQL): 19 migraciones aplicadas y 7 catálogos sembrados |
 | Documentación de la versión | Este README |
+
+> **Nota sobre el alcance de la V 1.0.** La versión quedó definida por el commit `ece6edd`.
+> La **página de errores** ([§12.15](#1215-página-de-errores)) se agregó **después** de ese
+> cierre y no forma parte del alcance congelado de la V 1.0: viaja en la actualización
+> **V 1.02** ([§27.3](#273-versión-102-manejo-de-errores)).
 
 #### 27.2.1 Todo lo que se construyó en la V 1.0
 
@@ -2574,7 +2811,9 @@ V 1.0**: no hay versiones anteriores ni posteriores publicadas.
 Las **14 rutas** de la aplicación (portada, formulario, "hoy", listado, tabla JSON, reporte,
 resumen, alta, ver, detalle, editar, actualizar, imprimir y eliminar) más el *health check*
 `/up` que aporta el framework. El detalle completo, con método, nombre, acción y respuesta,
-está en [§13](#13-rutas-y-endpoints).
+está en [§13](#13-rutas-y-endpoints). Con la ruta de errores que sumó la V 1.02
+([§27.3](#273-versión-102-manejo-de-errores)), la versión actual tiene **15**:
+`GET /error/{codigo}`.
 
 #### 27.2.3 Modelo de datos entregado en la V 1.0
 
@@ -2629,7 +2868,7 @@ está en [§13](#13-rutas-y-endpoints).
 | Colas, correo y API | No se usan: sin `app/Jobs`, sin envío de correo y sin `routes/api.php` |
 | Pruebas | Solo los ejemplos del esqueleto (ver la limitación en [§24.1](#241-estado-actual)) |
 
-#### 27.2.6 Cómo se construyó la versión (los 14 commits)
+#### 27.2.6 Cómo se construyó la versión (los 14 commits de la V 1.0)
 
 | # | Hito | Commits | Qué aportó |
 | --- | --- | --- | --- |
@@ -2669,7 +2908,161 @@ que hace falta para un uso multiusuario y publicado.
 3. Abrir `http://localhost:8088/planificadordiario-transformaconecta/` y comprobar con la tabla
    de [§18.4](#184-comprobación-de-que-todo-está-bien).
 
-### 27.3 Mejoras propuestas (orden sugerido)
+### 27.3 Versión 1.02: manejo de errores
+
+La **V 1.02** (también escrita V 1.0.2) es la **primera actualización sobre la versión base**.
+Agrega el manejo de errores del sistema: una página propia para los códigos 3xx, 4xx y 5xx, y
+la captura de los errores HTTP reales de navegación, que hasta la V 1.0 terminaban en las
+pantallas genéricas de Laravel.
+
+| Dato | Valor |
+| --- | --- |
+| Versión | **1.02** — actualización de manejo de errores |
+| Tipo | Actualización funcional sobre la V 1.0 (MVP); no hay migraciones ni dependencias nuevas |
+| Estado | Implementada y verificada; los cambios están en el árbol de trabajo, **pendientes de confirmar** |
+| Fecha | Octubre de 2026 |
+| Base | V 1.0 (MVP), commit `ece6edd`; documentación de la base en `db3d44f` |
+| Alcance | Página de errores propia (`/error/{codigo}`), captura de los errores HTTP reales y **registro detallado en un log diario de errores**, sin tocar el comportamiento AJAX |
+| Documentación | [§12.15](#1215-página-de-errores) y [§12.16](#1216-bitácora-de-errores-y-logs-diarios) (los módulos) y esta ficha |
+
+**Historial de versiones del sistema.**
+
+| Versión | Qué trajo | Commit / estado |
+| --- | --- | --- |
+| **1.0 (MVP)** | Versión base: registro diario, consulta con filtros, PDF del día, Excel y resumen de desempeño | `ece6edd` (05/10/2026) |
+| **1.02** | Manejo de errores: página propia 3xx/4xx/5xx, captura de excepciones y **log diario con el detalle de cada error** | Árbol de trabajo (pendiente de confirmar) |
+
+#### 27.3.1 Qué cambió en la V 1.02
+
+**Archivos nuevos.**
+
+| Archivo | Rol |
+| --- | --- |
+| `app/Errores/CatalogoDeErrores.php` | Catálogo: las 3 familias, 23 códigos con texto propio, icono y color; los códigos sin texto heredan el de su familia y un valor fuera de 300-599 se muestra como 500 avisando del ajuste |
+| `app/Errores/RegistroDeErrores.php` | Bitácora detallada: arma la entrada (incidente, petición, excepción, traza recortada y contexto), la escribe en el log de errores y devuelve el código de incidente |
+| `app/Http/Controllers/ErrorController.php` | `index(int $codigo, ?string $incidente)`: devuelve la vista con **el mismo estado HTTP** que explica, cabecera `no-store` y el incidente del error real |
+| `resources/views/errores/index.blade.php` | La vista sobre la plantilla institucional: chip de familia, número grande, título, explicación, código de incidente, "qué puedes hacer" y cuatro salidas (inicio, listado, crear diario, reintentar) |
+
+**Archivos modificados.**
+
+| Archivo | Cambio |
+| --- | --- |
+| `routes/web.php` | Se agregó `GET /error/{codigo}` (nombre `error`), con el parámetro restringido a números |
+| `bootstrap/app.php` | Dos manejadores de excepciones nuevos, después del de validación; ambos registran el error con detalle y pasan el incidente a la página |
+| `config/logging.php` | Canal `errores` con driver `daily`: `storage/logs/errores-AAAA-MM-DD.log` |
+| `.env` y `.env.example` | `LOG_STACK` pasa de `single` a `daily`; se suman `LOG_DAILY_DAYS=30` y `LOG_ERRORES_DAYS=60` |
+| `app/Http/Controllers/DailyPlanController.php` | Los `try/catch` llaman a `registrarFallo()`: siguen anotando en el log general y ahora también en el log de errores, con el nombre de la operación y su contexto |
+| `app/Models/DailyPlan.php` | `enTransaccion()` recibe el nombre de la operación y el contexto, y registra el fallo antes de relanzarlo |
+| `public/css/styles.css` | Bloque **8. Página de errores**: estilos `.tf-error*`, con azul para 3xx, naranja para 4xx y rojo para 5xx |
+
+#### 27.3.2 Cómo quedó el manejo de errores
+
+1. **Página propia por código.** `/error/{codigo}` muestra el aviso institucional del código
+   pedido, agrupado en tres familias: **300** redirecciones (azul), **400** errores del cliente
+   (naranja: acceso no permitido, página que no existe, método no permitido, sesión expirada,
+   demasiadas solicitudes…) y **500** errores del servidor (rojo).
+2. **El código real, no un 200 disfrazado.** La respuesta sale con el estado que explica:
+   `/error/403` contesta 403, `/error/404` contesta 404, `/error/500` contesta 500.
+3. **Captura de los errores de verdad.** En `bootstrap/app.php` se registraron dos manejadores:
+
+   | Manejador | Cuándo actúa | Qué responde |
+   | --- | --- | --- |
+   | `HttpExceptionInterface` | 403, 404, 405, 419, 429 y demás errores HTTP que se navegan | La página del sistema con el código real. Si la petición espera JSON, no interviene |
+   | `Throwable` (cualquier otra excepción) | Errores 500 | La página del sistema **solo con `APP_DEBUG=false`**; con la depuración encendida se conserva la pantalla de Laravel para no perder el detalle mientras se desarrolla |
+
+4. **El AJAX no cambia.** Las peticiones que esperan JSON (DataTables, guardado del formulario,
+   reporte y resumen) siguen recibiendo JSON, y la validación conserva su camino (volver al
+   formulario con los errores, o el sobre `{ ok:false, message, errors }` en AJAX).
+5. **Sin datos técnicos a la vista.** La página explica qué pasó en lenguaje llano y no muestra
+   trazas, rutas del servidor ni consultas.
+
+#### 27.3.3 Registro detallado en el log y archivos diarios
+
+**Qué se anota.** Cada error queda con su **código de incidente**, el origen (`manejador`,
+`controlador` o `modelo`), el código y la familia HTTP, la clase de la excepción, el mensaje, el
+archivo y la línea, la petición (método, URL, ruta, IP, navegador y referencia), si esperaba
+JSON, las **12 primeras líneas de la traza** y el contexto de la operación (`diario_id`,
+filtros, fecha…). Los 4xx se anotan como `WARNING` y los 5xx como `ERROR`. El detalle completo,
+con el ejemplo de una entrada real, está en
+[§12.16](#1216-bitácora-de-errores-y-logs-diarios).
+
+**Dónde queda.** Laravel estrena un archivo por día y conserva los anteriores los días
+configurados:
+
+| Archivo | Qué guarda | Retención |
+| --- | --- | --- |
+| `storage/logs/laravel-AAAA-MM-DD.log` | Log general de Laravel (antes era un único `laravel.log`) | `LOG_DAILY_DAYS=30` |
+| `storage/logs/errores-AAAA-MM-DD.log` | Detalle del manejo de errores | `LOG_ERRORES_DAYS=60` |
+
+**El incidente viaja a la pantalla.** El manejador pasa el código de incidente a la página de
+error, que lo muestra bajo el mensaje: así lo que vio la persona se puede buscar tal cual en
+`errores-*.log`.
+
+**De dónde sale cada registro.**
+
+| Origen | Cuándo | Quién lo escribe |
+| --- | --- | --- |
+| `manejador` | Excepciones que llegan a `bootstrap/app.php` (404, 419, 500…) | `RegistroDeErrores::registrar()` |
+| `controlador` | Lo que atrapan los `try/catch` de `DailyPlanController` | `registrarFallo()` → `deControlador()` |
+| `modelo` | Lo que falla dentro de una transacción del diario | `enTransaccion()` → `deModelo()` |
+
+**Sin datos personales.** No se guarda el cuerpo de la petición —el formulario tiene el
+contenido del diario—: se registran la dirección, la ruta, la IP y el contexto explícito. Todos
+los textos y la traza se recortan, y si el log no se puede escribir el sistema sigue
+respondiendo (el aviso va al log de PHP).
+
+#### 27.3.4 Cómo probar la V 1.02
+
+| Dirección | Qué debe verse |
+| --- | --- |
+| `/error/301` | Redirección, en azul |
+| `/error/403` | "Acceso no permitido" |
+| `/error/404` | "Página no encontrada" |
+| `/error/419` | "La sesión expiró" |
+| `/error/500` | "Error interno del servidor" |
+| `/error/999` | El aviso de 500 con la nota de que el código se ajustó |
+| Cualquier dirección inventada | La misma página de 404 (la excepción real se dibuja con este módulo) |
+| Guardar un formulario dejado mucho tiempo | La página de 419 con el botón *Reintentar* |
+| Una dirección inventada, mirando la página | Aparece el **código de incidente**; ese mismo código está en `storage/logs/errores-AAAA-MM-DD.log` |
+| `storage/logs` después de esos pedidos | Hay un `errores-AAAA-MM-DD.log` (y un `laravel-AAAA-MM-DD.log` desde la V 1.02) |
+
+#### 27.3.5 Verificación con la que se cerró la V 1.02
+
+| Comprobación | Resultado |
+| --- | --- |
+| `/error/301`, `/error/403`, `/error/404`, `/error/419`, `/error/500` | 301, 403, 404, 419 y 500 con la página del sistema |
+| `/error/999` (fuera de rango) | 500 con la nota de ajuste |
+| `/error/abc` | 404 normal del sistema |
+| `/ruta-que-no-existe` y `/diario/abc` | 404 con la página del sistema |
+| `POST /diario` sin testigo CSRF | 419 con la página del sistema |
+| `/ruta-que-no-existe` con `Accept: application/json` | JSON limpio, sin HTML |
+| `/diario/tabla` (AJAX del listado) | `{"ok":true,…}` intacto |
+| Portada, formulario, listado y `/up` | 200 |
+| Manejadores de excepciones probados aislados (con y sin depuración, web y JSON) | 5 de 5 escenarios con el resultado esperado |
+| 404 real pedido por HTTP con parámetros | Se creó `storage/logs/errores-2026-10-06.log` con la entrada completa (código, familia, excepción, mensaje, archivo, URL con parámetros, IP `::1`, navegador y traza de 12 líneas) |
+| Incidente de la página contra el del log | Coinciden: el código que muestra la página es el que encabeza la entrada |
+| Error 500 forzado con una ruta temporal | Se creó `storage/logs/laravel-2026-10-06.log` (rotación diaria del log general) y el log de errores sumó la entrada con `origen: manejador` y `codigo: 500`; la ruta temporal se eliminó después |
+| `php -l` de los archivos nuevos y modificados | Sin errores de sintaxis |
+
+En esa verificación se detectó y corrigió un `use Throwable;` innecesario en
+`bootstrap/app.php` que emitía un aviso de PHP y se filtraba dentro de las respuestas JSON.
+
+#### 27.3.6 Compatibilidad y pendientes de la V 1.02
+
+- **No rompe nada existente**: no hay migraciones, ni dependencias nuevas, ni cambios en la
+  base de datos, y todas las direcciones que ya funcionaban siguen respondiendo igual.
+- **Solo cambia lo que se ve cuando algo falla**: antes las páginas de error eran las genéricas
+  de Laravel; ahora son las del sistema.
+- **Cambia dónde se escriben los logs**: `LOG_STACK` pasa de `single` a `daily`. El archivo
+  `storage/logs/laravel.log` deja de recibir entradas y pasan a usarse
+  `laravel-AAAA-MM-DD.log` y `errores-AAAA-MM-DD.log`. Requiere que `storage/logs` sea
+  escribible (ya lo era para el esquema anterior).
+- **Pendiente de confirmar**: los archivos de la actualización todavía están en el árbol de
+  trabajo (sin commit). Al confirmarlos conviene anotar el hash aquí como commit de la versión.
+- **Mejora sugerida para más adelante**: avisar del error en el momento (por correo o un aviso
+  visible en el sistema) cuando ocurre un 500; hoy el detalle queda en el log diario de errores.
+
+### 27.4 Mejoras propuestas (orden sugerido)
 
 | Prioridad | Mejora | Por qué |
 | --- | --- | --- |
@@ -2678,6 +3071,7 @@ que hace falta para un uso multiusuario y publicado.
 | Media | Administración de catálogos desde la interfaz | Evitar editar seeders para cambiar una pregunta o agregar un ítem |
 | Media | Gráficos de evolución entre períodos (comparar mes contra mes) | El resumen compara mitades dentro de un período |
 | Media | Exportar el resumen también a Excel | Algunos destinatarios prefieren planilla |
+| Media | Aviso cuando ocurre un error 500 (registro visible o correo) | Hoy el detalle queda en el log diario de errores, pero nadie se entera en el momento |
 | Media | Rango de fechas rápidos ("últimos 30 días") | Un atajo frecuente en la consulta |
 | Baja | Recordatorios o aviso si el día de hoy no está registrado | Sostener el hábito |
 | Baja | Adjuntar imágenes o archivos al día | Evidencia fotográfica del trabajo |
@@ -2691,6 +3085,7 @@ que hace falta para un uso multiusuario y publicado.
 
 - **Programa:** Programa de Desarrollo Personal "Transforma-Conecta".
 - **Sistema:** Planificador Diario "Transforma-Conecta" — *Mi Planificador Diario*.
+- **Versiones:** **V 1.0 (MVP)**, la versión base (commit `ece6edd`, [§27.2](#272-versión-10-mvp-versión-base)), y **V 1.02**, actualización de manejo de errores ([§27.3](#273-versión-102-manejo-de-errores)).
 - **Marco de trabajo:** [Laravel 12](https://laravel.com) (licencia MIT). El README original
   del esqueleto de Laravel (sección "About Laravel", patrocinadores y guía de contribución)
   fue reemplazado por esta documentación.

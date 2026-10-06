@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Errores\RegistroDeErrores;
 use App\Excel\ReporteDiarioExport;
 use App\Filtros\Periodo;
 use App\Graficos\AgendaDelDia;
@@ -78,7 +79,7 @@ class DailyPlanController extends Controller
                 ),
             ]);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'listar los diarios', ['filtros' => $filtros]);
 
             return $this->jsonError('No se pudo obtener el listado de diarios.', [], 500);
         }
@@ -102,7 +103,7 @@ class DailyPlanController extends Controller
         try {
             return view('diario.formulario', $this->datosFormulario($plan->loadFull(), 'ver'));
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'mostrar el diario', ['diario_id' => $dailyPlan]);
 
             return redirect()
                 ->route('diario.listado')
@@ -124,7 +125,7 @@ class DailyPlanController extends Controller
         try {
             return view('diario.formulario', $this->datosFormulario($plan->loadFull(), 'editar'));
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'abrir el diario para modificar', ['diario_id' => $dailyPlan]);
 
             return redirect()
                 ->route('diario.listado')
@@ -149,7 +150,7 @@ class DailyPlanController extends Controller
 
             return $this->jsonSuccess(['plan' => $plan->toDetailArray()]);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'consultar el detalle del diario', ['diario_id' => $dailyPlan]);
 
             return $this->jsonError('No se pudo consultar el diario.', [], 500);
         }
@@ -178,7 +179,10 @@ class DailyPlanController extends Controller
                 201
             );
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'guardar el diario', [
+                'plan_date' => $data['plan_date'] ?? null,
+                'energy_level_id' => $data['energy_level_id'] ?? null,
+            ]);
 
             return $this->jsonError('No se pudo guardar el diario. Intenta de nuevo.', [], 500);
         }
@@ -196,7 +200,7 @@ class DailyPlanController extends Controller
         try {
             $plan = DailyPlan::find($dailyPlan);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'buscar el diario antes de modificarlo', ['diario_id' => $dailyPlan]);
         }
 
         if (! $plan) {
@@ -215,7 +219,7 @@ class DailyPlanController extends Controller
                 'Diario del '.Helper::longDate($plan->plan_date, withWeekday: true).' actualizado correctamente.'
             );
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'modificar el diario', ['diario_id' => $dailyPlan]);
 
             return $this->jsonError('No se pudo actualizar el diario. Intenta de nuevo.', [], 500);
         }
@@ -240,7 +244,7 @@ class DailyPlanController extends Controller
 
             return $this->jsonSuccess(null, 'Diario del '.$etiqueta.' eliminado correctamente.');
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'eliminar el diario', ['diario_id' => $dailyPlan]);
 
             return $this->jsonError('No se pudo eliminar el diario. Intenta de nuevo.', [], 500);
         }
@@ -331,7 +335,7 @@ class DailyPlanController extends Controller
                 'Pragma' => 'no-cache',
             ]);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'generar el resumen de desempeño', ['filtros' => $filtros]);
 
             return $this->jsonError('No se pudo generar el resumen. Intenta de nuevo.', [], 500);
         }
@@ -446,7 +450,7 @@ class DailyPlanController extends Controller
                 'Pragma' => 'no-cache',
             ]);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'imprimir el diario', ['diario_id' => $dailyPlan]);
 
             return $this->jsonError('No se pudo generar el PDF del diario.', [], 500);
         }
@@ -490,7 +494,7 @@ class DailyPlanController extends Controller
                 'Pragma' => 'no-cache',
             ]);
         } catch (Throwable $e) {
-            report($e);
+            $this->registrarFallo($e, 'generar el reporte detallado en Excel', ['filtros' => $filtros]);
 
             return $this->jsonError('No se pudo generar el reporte detallado.', [], 500);
         }
@@ -686,6 +690,27 @@ class DailyPlanController extends Controller
 
             'notes.*.content.max' => 'La nota es demasiado larga.',
         ];
+    }
+
+    /**
+     * Deja constancia del fallo antes de responderle al navegador.
+     *
+     * El error se anota en el log general (como se hacía con report()) y, con
+     * mucho más detalle —dirección, IP, ruta, navegador, traza recortada y el
+     * contexto de la operación—, en el log de errores del sistema:
+     *
+     *     storage/logs/errores-AAAA-MM-DD.log
+     *
+     * El código de incidente que devuelve no se le muestra al usuario en estas
+     * respuestas AJAX (el mensaje ya es claro); queda en el log para cruzarlo.
+     *
+     * @param  array<string, mixed>  $contexto  Datos de la operación que falló.
+     */
+    private function registrarFallo(Throwable $e, string $operacion, array $contexto = []): void
+    {
+        report($e);
+
+        RegistroDeErrores::deControlador($e, $operacion, $contexto);
     }
 
     /** Sobre de respuesta correcta. */

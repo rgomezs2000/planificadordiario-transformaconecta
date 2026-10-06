@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DailyController;
 use App\Http\Controllers\DailyPlanController;
+use App\Http\Controllers\ErrorController;
 use App\Http\Controllers\HomeController;
 use Illuminate\Support\Facades\Route;
 
@@ -18,6 +19,14 @@ use Illuminate\Support\Facades\Route;
 
 // Menú principal
 Route::get('/', [HomeController::class, 'index'])->name('home');
+
+// Página de errores: explica en pantalla el código pedido, agrupado por familia
+// (300 redirecciones, 400 errores del cliente, 500 errores del servidor).
+// El mismo controlador lo usa el manejador de excepciones de bootstrap/app.php
+// para los errores reales de navegación, así el diseño es uno solo.
+Route::get('/error/{codigo}', [ErrorController::class, 'index'])
+    ->whereNumber('codigo')
+    ->name('error');
 
 // Planificador diario
 Route::prefix('diario')->name('diario.')->group(function () {
@@ -58,3 +67,4 @@ Route::prefix('diario')->name('diario.')->group(function () {
         Route::delete('/{dailyPlan}', [DailyPlanController::class, 'destroy'])->name('destroy');
     });
 });
+

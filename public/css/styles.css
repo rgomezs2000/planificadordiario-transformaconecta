@@ -1808,7 +1808,177 @@ textarea.form-control {
 }
 
 /* ==========================================================================
-   8. FORMATOS DE PANTALLA
+   8. PÁGINA DE ERRORES
+
+   La usan tanto la ruta /error/{codigo} como el manejador de excepciones, así
+   que aquí vive el único diseño de error del sistema. El color de la tarjeta
+   cambia según la familia: azul 3xx, naranja 4xx y rojo 5xx.
+   ========================================================================== */
+
+.tf-error {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.6rem 1.4rem;
+    border-top-color: var(--tc-azul);
+    text-align: center;
+}
+
+.tf-error--azul {
+    border-top-color: var(--tc-azul);
+}
+
+.tf-error--naranja {
+    border-top-color: var(--tc-naranja);
+}
+
+.tf-error--rojo {
+    border-top-color: var(--tc-rojo);
+}
+
+.tf-error__familia {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.tf-error--naranja .tf-error__familia {
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+}
+
+.tf-error--rojo .tf-error__familia {
+    background: #fdecec;
+    color: var(--tc-rojo);
+}
+
+.tf-error__codigo {
+    margin: 0.7rem 0 0;
+    color: var(--tc-azul-oscuro);
+    font-size: clamp(3.4rem, 2rem + 9vw, 6.4rem);
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0.02em;
+}
+
+.tf-error--naranja .tf-error__codigo {
+    color: var(--tc-naranja);
+}
+
+.tf-error--rojo .tf-error__codigo {
+    color: var(--tc-rojo);
+}
+
+.tf-error__titulo {
+    margin: 0.35rem 0 0.6rem;
+    color: var(--tc-azul-oscuro);
+    font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.45rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.tf-error__mensaje {
+    max-width: 34rem;
+    margin: 0 auto 0.6rem;
+    color: var(--tc-texto);
+}
+
+.tf-error__familia-texto {
+    max-width: 34rem;
+    margin: 0 auto 1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.82rem;
+}
+
+.tf-error__nota {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    max-width: 34rem;
+    margin: 0 auto 1rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--tc-naranja);
+    border-radius: 0 var(--tc-radio-sm) var(--tc-radio-sm) 0;
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+    font-size: 0.8rem;
+    text-align: left;
+}
+
+.tf-error__incidente {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 34rem;
+    margin: 0 auto 1rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px dashed var(--tc-borde);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-gris-100);
+    color: var(--tc-azul-profundo);
+    font-size: 0.78rem;
+}
+
+.tf-error__incidente strong {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+}
+
+.tf-error__incidente span {
+    color: var(--tc-gris-500);
+}
+
+.tf-error__subtitulo {
+    margin: 0 0 0.4rem;
+    color: var(--tc-azul-profundo);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tf-error__lista {
+    max-width: 34rem;
+    margin: 0 auto 1.2rem;
+    padding-left: 1.15rem;
+    color: var(--tc-texto);
+    font-size: 0.86rem;
+    text-align: left;
+}
+
+.tf-error__lista li {
+    margin-bottom: 0.25rem;
+}
+
+.tf-error__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.tf-error__pie {
+    margin: 1.1rem 0 0;
+    padding-top: 0.7rem;
+    border-top: 1px dashed var(--tc-borde);
+    color: var(--tc-gris-500);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* ==========================================================================
+   9. FORMATOS DE PANTALLA
    --------------------------------------------------------------------------
    La hoja de estilos es "mobile first": lo de arriba ya sirve para móviles.
    Estos son los cortes previstos, uno por cada formato pedido:

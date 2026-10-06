@@ -73,6 +73,26 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         | Log detallado de errores: la bitácora del manejo de errores del
+         | sistema (App\Errores\RegistroDeErrores). Se escribe en su propio
+         | archivo, con el mismo criterio diario que el log general: cada día
+         | estrena archivo y los anteriores se conservan.
+         |
+         |   storage/logs/errores-AAAA-MM-DD.log
+         |
+         | El detalle es más rico que el del log general (dirección, IP, ruta,
+         | traza recortada y contexto de la operación), así que conviene darle
+         | más días de vida que al log general.
+         */
+        'errores' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/errores.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_ERRORES_DAYS', 60),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),
