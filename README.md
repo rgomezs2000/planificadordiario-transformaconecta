@@ -31,8 +31,8 @@ http://localhost:8088/planificadordiario-transformaconecta/
 > persona que lo usa todos los días, en [§19](#19-guía-de-uso-paso-a-paso).
 > El README original de Laravel (About Laravel, sponsors, licencia) fue reemplazado por
 > esta documentación; el marco de trabajo sigue siendo Laravel 12, con su propia licencia MIT,
-> mientras que el código de este proyecto se distribuye bajo la **Unlicense** (ver
-> [§28](#28-créditos-y-licencia)).
+> mientras que el código de este proyecto se distribuye bajo la **Unlicense**
+> ([LICENSE](LICENSE) y [§28](#28-créditos-y-licencia)).
 
 ---
 
@@ -110,6 +110,7 @@ http://localhost:8088/planificadordiario-transformaconecta/
 | Generación de documentos | dompdf (PDF) y PhpSpreadsheet (XLSX), en memoria |
 | Gráficos | GD (PNG en el servidor) y JavaScript propio (línea de tiempo en el navegador) |
 | Repositorio | Git, rama `main` |
+| Licencia | **Unlicense** (dominio público) — ver [LICENSE](LICENSE) y [§28](#28-créditos-y-licencia) |
 
 ---
 
@@ -618,7 +619,7 @@ planificadordiario-transformaconecta/
 ├── composer.json / composer.lock       Dependencias de PHP
 ├── package.json / vite.config.js       Esqueleto de front-end con Vite (no se usa)
 ├── phpunit.xml                         Configuración de pruebas
-├── LICENSE                             Unlicense (dominio público)
+├── LICENSE                             Licencia del sistema (The Unlicense) documentada
 └── README.md                           Este documento
 ```
 
@@ -2235,7 +2236,7 @@ Valores verificados en el entorno de desarrollo de referencia (XAMPP, 06/10/2026
 | `GET /vendor/` | **403** (bloqueado por el `.htaccess` de la raíz) |
 | `php artisan route:list` | 18 rutas (15 de la aplicación + `/up` + 2 que publica el framework para el disco `local`) |
 | `php artisan test` | 1 prueba `Unit` correcta y **1 prueba `Feature` fallando** (ver [§24](#24-pruebas)) |
-| `git status --short` | Con los cambios de la V 1.02 sin confirmar (ver [§27.3](#273-versión-102-manejo-de-errores)) |
+| `git status --short` | Con la documentación de la licencia sin confirmar (ver [§28](#28-créditos-y-licencia)) |
 | `storage/logs/` tras provocar un error | Se crean `errores-AAAA-MM-DD.log` y `laravel-AAAA-MM-DD.log` (un archivo por día) |
 
 ---
@@ -2746,7 +2747,7 @@ MVP del planificador completo, mejoras de guardado (persistencia de secciones op
 confirmación antes de enviar) y limpieza del gráfico. Todo eso culminó en la **V 1.0 (MVP)**
 (commit `ece6edd`), que se detalla en [§27.2](#272-versión-10-mvp-versión-base), y sobre ella se
 publicó la actualización **V 1.02** de manejo de errores, que se detalla en
-[§27.3](#273-versión-102-manejo-de-errores). Último commit: `db3d44f`.
+[§27.3](#273-versión-102-manejo-de-errores). Último commit: `6f82701`.
 
 **Estado del repositorio (verificado el 06/10/2026):**
 
@@ -2754,9 +2755,9 @@ publicó la actualización **V 1.02** de manejo de errores, que se detalla en
 | --- | --- |
 | Rama | `main`, siguiendo a `origin/main` |
 | Remoto | `https://github.com/rgomezs2000/planificadordiario-transformaconecta.git` |
-| Último commit | `db3d44f` — "documentacion del sistema a partir del MVP" (06/10/2026) |
-| Cantidad de commits | 15 |
-| Árbol de trabajo | Con los cambios de la **V 1.02** sin confirmar (el módulo de errores) |
+| Último commit | `6f82701` — "se agrega manejo de errores" (06/10/2026): la V 1.02 |
+| Cantidad de commits | 16 |
+| Árbol de trabajo | Con la documentación de la licencia ([LICENSE](LICENSE) y este README) sin confirmar |
 | Pendientes de higiene | `.tmp-chrome4` versionado (ver [§10.1](#101-archivos-sueltos-en-la-raíz-y-carpeta-tmp-chrome4)), 12 artefactos de ejemplo en la raíz y `database/database.sqlite` en disco |
 
 ### 27.2 Versión 1.0: MVP (versión base)
@@ -2919,7 +2920,7 @@ pantallas genéricas de Laravel.
 | --- | --- |
 | Versión | **1.02** — actualización de manejo de errores |
 | Tipo | Actualización funcional sobre la V 1.0 (MVP); no hay migraciones ni dependencias nuevas |
-| Estado | Implementada y verificada; los cambios están en el árbol de trabajo, **pendientes de confirmar** |
+| Estado | Implementada, verificada y **confirmada** en el commit `6f82701` — "se agrega manejo de errores" (06/10/2026) |
 | Fecha | Octubre de 2026 |
 | Base | V 1.0 (MVP), commit `ece6edd`; documentación de la base en `db3d44f` |
 | Alcance | Página de errores propia (`/error/{codigo}`), captura de los errores HTTP reales y **registro detallado en un log diario de errores**, sin tocar el comportamiento AJAX |
@@ -2930,7 +2931,7 @@ pantallas genéricas de Laravel.
 | Versión | Qué trajo | Commit / estado |
 | --- | --- | --- |
 | **1.0 (MVP)** | Versión base: registro diario, consulta con filtros, PDF del día, Excel y resumen de desempeño | `ece6edd` (05/10/2026) |
-| **1.02** | Manejo de errores: página propia 3xx/4xx/5xx, captura de excepciones y **log diario con el detalle de cada error** | Árbol de trabajo (pendiente de confirmar) |
+| **1.02** | Manejo de errores: página propia 3xx/4xx/5xx, captura de excepciones y **log diario con el detalle de cada error** | `6f82701` — "se agrega manejo de errores" (06/10/2026) |
 
 #### 27.3.1 Qué cambió en la V 1.02
 
@@ -3057,8 +3058,8 @@ En esa verificación se detectó y corrigió un `use Throwable;` innecesario en
   `storage/logs/laravel.log` deja de recibir entradas y pasan a usarse
   `laravel-AAAA-MM-DD.log` y `errores-AAAA-MM-DD.log`. Requiere que `storage/logs` sea
   escribible (ya lo era para el esquema anterior).
-- **Pendiente de confirmar**: los archivos de la actualización todavía están en el árbol de
-  trabajo (sin commit). Al confirmarlos conviene anotar el hash aquí como commit de la versión.
+- **Confirmada**: los archivos de la actualización quedaron en el commit `6f82701` — "se agrega
+  manejo de errores" (06/10/2026), que es el commit que define la V 1.02.
 - **Mejora sugerida para más adelante**: avisar del error en el momento (por correo o un aviso
   visible en el sistema) cuando ocurre un 500; hoy el detalle queda en el log diario de errores.
 
@@ -3095,10 +3096,25 @@ En esa verificación se detectó y corrigió un `use Throwable;` innecesario en
   [jQuery](https://jquery.com) · [DataTables](https://datatables.net) ·
   [bootbox.js](https://bootboxjs.com) · [bootstrap-datepicker](https://github.com/uxsolutions/bootstrap-datepicker).
 - **Tipografía de los documentos:** DejaVu Sans (gráficos) y Helvetica (texto del PDF).
-- **Licencia del proyecto:** [LICENSE](LICENSE) contiene la **Unlicense** (dominio público).
-  Atención: `composer.json` todavía declara `"license": "MIT"` y conserva el `name`
-  `laravel/laravel` y la descripción del esqueleto; conviene alinearlos si se publica el
-  paquete o el repositorio.
+- **Licencia del proyecto:** [LICENSE](LICENSE) documenta la licencia completa del sistema y
+  contiene el texto oficial de **The Unlicense**, que libera el código al **dominio público**:
+  cualquiera puede copiar, modificar, publicar, usar, compilar, vender y distribuir este
+  software, para cualquier fin, comercial o no, sin pedir permiso ni condiciones.
+  El archivo está organizado en siete puntos:
+
+  | Punto del LICENSE | Contenido |
+  | --- | --- |
+  | 1. Identificación | Sistema, repositorio, versión, año y **qué cubre la licencia** (el código propio) y qué no (dependencias, `vendor/`, `.env`, los datos de cada persona y los documentos de ejemplo) |
+  | 2. The Unlicense | El **texto oficial en inglés**, completo y sin cambios (es el que tiene valor legal) |
+  | 3. Qué significa | Resumen en español, marcado como informativo: libertad total, dominio público, sin condiciones y sin garantías |
+  | 4. Dependencias | Licencia declarada por cada componente: Laravel, dompdf, PhpSpreadsheet, Bootstrap, jQuery, DataTables, bootbox, datepicker, fuentes y paquetes de desarrollo |
+  | 5. Cómo aplicarla | Que no hace falta hacer nada para usarlo, cómo redistribuirlo y el aviso sugerido de Unlicense para los archivos fuente |
+  | 6. Metadatos | La diferencia pendiente: `composer.json` todavía declara `name: laravel/laravel` y `license: MIT`, y conviene alinearlos |
+  | 7. Registro | Cuándo y cómo se documentó la licencia |
+
+  Atención: si se redistribuye el sistema, las dependencias mantienen sus propias licencias
+  (Laravel, PhpSpreadsheet y Bootstrap son MIT; dompdf es LGPL-2.1; phpunit y mockery son
+  BSD-3-Clause; bootstrap-datepicker es Apache-2.0).
 
 ---
 

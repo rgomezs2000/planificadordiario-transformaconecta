@@ -1,3 +1,55 @@
+==============================================================================
+ LICENCIA · PLANIFICADOR DIARIO "TRANSFORMA-CONECTA"
+==============================================================================
+
+Sistema de Planificación Personal del Programa de Desarrollo Personal
+"Transforma-Conecta" — conocido en pantalla como "Mi Planificador Diario".
+
+Este archivo documenta la licencia del sistema: qué se libera, con qué
+términos y qué queda en manos de terceros. El texto legal que aplica es el de
+The Unlicense (Unlicense.org), que va completo y sin cambios en el punto 2.
+Todo lo demás es información de contexto para quien use, estudie o
+redistribuya el sistema.
+
+------------------------------------------------------------------------------
+ 1. IDENTIFICACIÓN
+------------------------------------------------------------------------------
+
+  Sistema        Planificador Diario "Transforma-Conecta"
+  Nombre en uso  Mi Planificador Diario
+  Repositorio    planificadordiario-transformaconecta (rama main)
+  Versión        1.02 (manejo de errores), sobre la base 1.0 (MVP)
+  Año            2026
+  Autoría        La del repositorio del proyecto
+  Marco          Laravel 12 · PHP 8.2 · MySQL (XAMPP/Apache)
+  Documentado    Octubre de 2026
+
+Alcance de esta licencia
+  Cubre todo lo escrito para este sistema: el código de la aplicación
+  (app/, routes/, config/, database/, bootstrap/), las vistas y los recursos
+  (resources/), los archivos públicos propios (public/css, public/js), las
+  pruebas, las migraciones y los sembrados, la documentación (README.md) y
+  este mismo archivo.
+
+  No cubre:
+    · las dependencias de terceros (punto 4), que mantienen sus licencias;
+    · la carpeta vendor/, que se instala con Composer y no se distribuye
+      en el repositorio;
+    · el archivo .env ni ningún dato del entorno (credenciales, rutas);
+    · los datos que cada persona registre en su base de datos: son suyos;
+    · los documentos de ejemplo que quedaron en la raíz del proyecto
+      (PDF, XLSX y PNG de prueba), que pueden borrarse.
+
+------------------------------------------------------------------------------
+ 2. LICENCIA: THE UNLICENSE (texto oficial, en inglés)
+------------------------------------------------------------------------------
+
+The Unlicense es una licencia que renuncia a los derechos de autor y libera
+el software al dominio público. El texto siguiente es el oficial y es el que
+tiene valor legal; se reproduce completo y sin modificaciones.
+
+------------------------------------------------------------------------------
+
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or
@@ -22,3 +74,159 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to <https://unlicense.org>
+
+------------------------------------------------------------------------------
+
+Fin del texto oficial. Lo que sigue (puntos 3 a 7) es informativo y no
+modifica ni reemplaza el texto de arriba.
+
+------------------------------------------------------------------------------
+ 3. QUÉ SIGNIFICA, EN ESPAÑOL (resumen informativo)
+------------------------------------------------------------------------------
+
+  · Libertad total de uso. Cualquiera puede copiar, modificar, publicar,
+    usar, compilar, vender y distribuir este software, en código fuente o
+    ya compilado, para cualquier fin, comercial o no comercial, y por
+    cualquier medio.
+
+  · Dominio público. Quien tenga derechos de autor sobre el software los
+    dedica al dominio público, de forma voluntaria y permanente. Es una
+    renuncia expresa a todos los derechos presentes y futuros sobre el
+    código.
+
+  · Sin condiciones. No hay que pedir permiso, ni pagar, ni incluir avisos,
+    ni publicar los cambios que se hagan. No es una licencia "copyleft":
+    el software puede incorporarse a proyectos cerrados.
+
+  · Sin garantías. El software se entrega "tal cual", sin garantía de ningún
+    tipo. Nadie responde por daños, pérdidas de datos o perjuicios derivados
+    de su uso.
+
+  · Sobre la autoría. La licencia no obliga a mencionar a los autores; aun
+    así, citar el origen y el repositorio es una cortesía que ayuda a que
+    otras personas encuentren el proyecto.
+
+Este resumen es una explicación en español, no una traducción oficial: ante
+cualquier duda, vale el texto en inglés del punto 2.
+
+------------------------------------------------------------------------------
+ 4. DEPENDENCIAS DE TERCEROS (cada una con su licencia)
+------------------------------------------------------------------------------
+
+Este sistema usa componentes de terceros que NO están cubiertos por The
+Unlicense. Se listan con su licencia declarada por cada proyecto, para saber
+a quién corresponde cada derecho.
+
+Back-end (instalado con Composer; no se versiona en el repositorio)
+
+  Paquete                          Versión   Licencia
+  -------------------------------  --------  -----------------------------
+  laravel/framework                12.69.3   MIT
+  barryvdh/laravel-dompdf          3.1.2     MIT
+  dompdf/dompdf                    3.1.6     LGPL-2.1
+  dompdf/php-font-lib                        LGPL-2.1-or-later
+  dompdf/php-svg-lib                         LGPL-3.0-or-later
+  masterminds/html5                          MIT
+  sabberworm/php-css-parser                  MIT
+  monolog/monolog                            MIT
+  phpoffice/phpspreadsheet         5.10.0    MIT
+  laravel/tinker                             MIT
+
+  Las librerías de dompdf se usan sin modificar y se instalan como
+  dependencias: su licencia (LGPL) alcanza a esas librerías, no al código
+  de este sistema.
+
+Front-end (se carga por CDN en el navegador; no se copia en el repositorio)
+
+  Librería                         Versión   Licencia
+  -------------------------------  --------  -----------------------------
+  Bootstrap                        5.3.8     MIT
+  Bootstrap Icons                  1.13.1    MIT
+  jQuery                           3.7.1     MIT
+  DataTables                       2.3.8     MIT
+  bootbox                          6.0.4     MIT
+  bootstrap-datepicker             1.10.1    Apache-2.0
+
+Tipografías y generación de documentos
+
+  · DejaVu Sans (incluida en dompdf): licencia libre de Bitstream Vera.
+  · Fuentes base del PDF (Helvetica, Times, Courier, Symbol, ZapfDingbats):
+    no se incrustan en el archivo; son fuentes base del propio formato PDF.
+
+Desarrollo (no se despliega en producción)
+
+  Paquete                          Licencia
+  -------------------------------  -----------------------------
+  phpunit/phpunit                  BSD-3-Clause
+  mockery/mockery                  BSD-3-Clause
+  fakerphp/faker                   MIT
+  nunomaduro/collision             MIT
+  laravel/pail · pint · sail       MIT
+
+Si se redistribuye este sistema, conviene conservar los archivos de licencia
+de estas dependencias tal como vienen en sus paquetes.
+
+------------------------------------------------------------------------------
+ 5. CÓMO APLICAR ESTA LICENCIA
+------------------------------------------------------------------------------
+
+  · Para usarlo: no hay que hacer nada. Se puede copiar, modificar y
+    publicar el sistema sin pedir autorización.
+
+  · Para redistribuirlo: alcanza con mantener el código y, si se quiere,
+    este mismo archivo LICENSE junto al proyecto.
+
+  · Aviso sugerido para los archivos fuente (es el que propone Unlicense):
+
+        This is free and unencumbered software released into the public
+        domain.
+
+        Anyone is free to copy, modify, publish, use, compile, sell, or
+        distribute this software, either in source code form or as a compiled
+        binary, for any purpose, commercial or non-commercial, and by any
+        means.
+
+        For more information, please refer to <https://unlicense.org>
+
+    Este proyecto no lo repite en cada archivo: la licencia completa vive
+    en este LICENSE, que es el que se distribuye con el sistema.
+
+  · Atribución: no es obligatoria. Si se desea, puede citarse como
+    «Planificador Diario "Transforma-Conecta" — Programa de Desarrollo
+    Personal Transforma-Conecta».
+
+------------------------------------------------------------------------------
+ 6. METADATOS DEL PROYECTO (pendiente de alinear)
+------------------------------------------------------------------------------
+
+  composer.json todavía declara:
+
+      "name": "laravel/laravel"
+      "description": "The skeleton application for the Laravel framework."
+      "license": "MIT"
+
+  La licencia real del sistema es la de este archivo (Unlicense). Cuando se
+  retomen los metadatos, conviene dejarlos así:
+
+      "name": "transforma-conecta/planificador-diario"
+      "description": "Planificador Diario del Programa de Desarrollo Personal Transforma-Conecta."
+      "license": "Unlicense"
+
+  El paquete laravel/laravel de origen sigue siendo MIT, y Laravel Framework
+  mantiene su propia licencia MIT; este cambio solo corrige los metadatos de
+  ESTE proyecto.
+
+------------------------------------------------------------------------------
+ 7. REGISTRO DE ESTA DOCUMENTACIÓN
+------------------------------------------------------------------------------
+
+  Octubre de 2026
+    · Se documenta la licencia del sistema en este archivo: identificación,
+      texto oficial de The Unlicense, resumen en español, dependencias de
+      terceros y forma de aplicación.
+    · Se deja anotada la diferencia entre esta licencia y los metadatos de
+      composer.json (punto 6), que sigue declarando MIT.
+
+==============================================================================
+ Para más información sobre The Unlicense: <https://unlicense.org>
+==============================================================================
