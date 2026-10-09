@@ -134,6 +134,22 @@
                 </a>
             </li>
         </ul>
+
+        <p class="tc-menu__seccion">Planificación</p>
+
+        <ul class="tc-menu__lista">
+            <li>
+                <a class="tc-menu__enlace" href="{{ route('planificacion.index') }}">
+                    <span class="tc-menu__icono tc-menu__icono--turquesa">
+                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                    </span>
+                    <span class="tc-menu__texto">
+                        Planificación periódica
+                        <span class="tc-menu__descripcion">Monta el libro del período</span>
+                    </span>
+                </a>
+            </li>
+        </ul>
     </div>
 
     <div class="tc-menu__pie">

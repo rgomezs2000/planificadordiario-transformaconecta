@@ -4,6 +4,7 @@ use App\Http\Controllers\DailyController;
 use App\Http\Controllers\DailyPlanController;
 use App\Http\Controllers\ErrorController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\PlanificacionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -60,11 +61,33 @@ Route::prefix('diario')->name('diario.')->group(function () {
         Route::get('/{dailyPlan}/editar', [DailyPlanController::class, 'edit'])->name('edit');
         Route::match(['put', 'patch'], '/{dailyPlan}', [DailyPlanController::class, 'update'])->name('update');
 
-        // Imprimir
+        // Imprimir: el PDF y su versión en imagen. Los dos se guardan en el
+        // almacenamiento privado: si ya están hechos se sirven desde ahí y sólo
+        // se generan cuando faltan. Con ?marca=1 salen como muestra.
         Route::get('/{dailyPlan}/imprimir', [DailyPlanController::class, 'printPdf'])->name('print');
+        Route::get('/{dailyPlan}/imagen', [DailyPlanController::class, 'image'])->name('image');
 
         // Eliminar
         Route::delete('/{dailyPlan}', [DailyPlanController::class, 'destroy'])->name('destroy');
     });
 });
 
+// Planificación periódica
+//
+// Es el módulo del libro de Excel del período: sirve la planilla estática, la
+// monta en la cola y muestra lo que dejó la corrida de las 00:00 del comando
+// planificacion:importar. El módulo no procesa nada por sí solo.
+Route::prefix('planificacion')->name('planificacion.')->group(function () {
+    Route::get('/', [PlanificacionController::class, 'index'])->name('index');
+
+    // Descargar la planilla en blanco (dirección fija, siempre la misma)
+    Route::get('/plantilla', [PlanificacionController::class, 'plantilla'])->name('plantilla');
+
+    // Montar un libro en la cola
+    Route::post('/', [PlanificacionController::class, 'store'])->name('store');
+
+    // Sacar un libro de la cola sin procesarlo
+    Route::delete('/{archivo}', [PlanificacionController::class, 'descartar'])
+        ->where('archivo', '[A-Za-z0-9._-]+')
+        ->name('descartar');
+});

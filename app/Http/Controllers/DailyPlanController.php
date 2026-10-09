@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Documentos\DocumentoDelDiario;
 use App\Errores\RegistroDeErrores;
 use App\Excel\ReporteDiarioExport;
 use App\Filtros\Periodo;
@@ -16,7 +17,6 @@ use App\Reportes\AnalisisDeDesempeno;
 use App\Reportes\GraficosDelResumen;
 use App\Reportes\RedaccionDelResumen;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Dompdf\Dompdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -404,7 +404,13 @@ class DailyPlanController extends Controller
     /**
      * PDF del día.
      *
-     * Con ?marca=1 sale con la marca de agua diagonal SPECIMEN.
+     * El documento se guarda en el almacenamiento privado la primera vez y a
+     * partir de ahí se sirve desde ahí: si ya está generado no se vuelve a
+     * renderizar. Cuando falta, se arma desde la base de datos y se guarda.
+     *
+     * Con ?marca=1 sale con la marca de agua diagonal SPECIMEN, y esa variante
+     * se guarda aparte, así marcar y desmarcar no se pisan entre sí.
+     *
      * Si el diario no existe responde 404 en JSON, y el listado lo avisa en una
      * alerta antes de abrir esta dirección.
      */
@@ -418,34 +424,16 @@ class DailyPlanController extends Controller
             }
 
             $marca = $request->boolean('marca');
-            $plan->loadFull();
+            $documento = DocumentoDelDiario::de($plan);
 
-            $html = view('diario.pdf', [
-                'plan' => $plan,
-                'marca' => $marca,
-                // El gráfico del día, dibujado en el servidor: el PDF no ejecuta
-                // JavaScript, así que viaja como imagen ya hecha.
-                'grafico' => AgendaPng::dataUri(AgendaDelDia::datos(
-                    $plan->scheduleEntries->map(fn (ScheduleEntry $franja) => [
-                        'start_time' => $franja->start_time,
-                        'activity' => $franja->activity,
-                        'is_done' => (bool) $franja->is_done,
-                    ])->all()
-                )),
-            ])->render();
+            // Se genera y se guarda si no estaba; si ya estaba, no se toca.
+            $ruta = $documento->asegurarPdf($marca);
 
-            $dompdf = Pdf::loadHTML($html)->setPaper('letter')->getDomPDF();
-            $dompdf->render();
-
-            if ($marca) {
-                $this->marcarComoMuestra($dompdf);
-            }
-
-            // Sin caché: el PDF se pide siempre con la misma dirección, y si el
-            // navegador lo guardara mostraría la versión anterior del diario.
-            return response($dompdf->output(), 200, [
+            // Sin caché de navegador: la dirección es siempre la misma, y si el
+            // navegador guardara el archivo mostraría una versión anterior.
+            return response()->file($ruta, [
                 'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$this->pdfFileName($plan, $marca).'"',
+                'Content-Disposition' => 'inline; filename="'.$documento->nombre('pdf', $marca).'"',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
                 'Pragma' => 'no-cache',
             ]);
@@ -453,6 +441,43 @@ class DailyPlanController extends Controller
             $this->registrarFallo($e, 'imprimir el diario', ['diario_id' => $dailyPlan]);
 
             return $this->jsonError('No se pudo generar el PDF del diario.', [], 500);
+        }
+    }
+
+    /**
+     * Imagen del día: el PDF convertido a JPG.
+     *
+     * Si el PDF tiene una sola página se descarga un JPG; si tiene dos o más,
+     * se descarga un ZIP con una imagen por página. Igual que el PDF, todo sale
+     * del almacenamiento privado cuando ya está hecho: si falta la imagen se
+     * convierte el PDF guardado y, si el PDF tampoco está, se genera primero.
+     *
+     * Con ?marca=1 la imagen sale del PDF con la marca de agua SPECIMEN.
+     */
+    public function image(Request $request, int $dailyPlan)
+    {
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+
+            if (! $plan) {
+                return $this->jsonError('El diario que intentas convertir no existe.', [], 404);
+            }
+
+            $archivo = DocumentoDelDiario::de($plan)->asegurarImagen($request->boolean('marca'));
+
+            return response()->download($archivo['ruta'], $archivo['nombre'], [
+                'Content-Type' => $archivo['tipo'],
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma' => 'no-cache',
+            ]);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'generar la imagen del diario', ['diario_id' => $dailyPlan]);
+
+            return $this->jsonError(
+                'No se pudo generar la imagen del diario. Revisa que el conversor de PDF a JPG esté instalado.',
+                [],
+                500
+            );
         }
     }
 
@@ -498,71 +523,6 @@ class DailyPlanController extends Controller
 
             return $this->jsonError('No se pudo generar el reporte detallado.', [], 500);
         }
-    }
-
-    /**
-     * Marca de agua SPECIMEN, centrada y en diagonal, sobre todas las páginas.
-     *
-     * Se dibuja con el lienzo de dompdf porque el PDF no admite rotar texto con
-     * CSS. El ángulo va en negativo a propósito: dompdf compone la matriz de
-     * rotación como [cos, -sin, sin, cos], así que un ángulo positivo haría
-     * bajar la marca de izquierda a derecha. Con -45 sube, como se pidió.
-     *
-     * La posición se calcula a mano: se resta media longitud del texto en la
-     * dirección de la diagonal para que el centro caiga en el centro de la
-     * página, y se descuenta la altura de la fuente porque el texto se coloca
-     * por su parte de arriba, no por su línea base.
-     *
-     * El color es gris oscuro, pero con muy poca opacidad: así sobre el papel
-     * blanco queda un gris clarísimo y sobre el texto negro casi no se nota. Si
-     * se pintara un gris claro opaco, taparía las letras del documento.
-     */
-    private function marcarComoMuestra(Dompdf $dompdf): void
-    {
-        $canvas = $dompdf->getCanvas();
-        $metricas = $dompdf->getFontMetrics();
-        $fuente = $metricas->getFont('Helvetica', 'bold');
-
-        $texto = 'SPECIMEN';
-        $tamano = 88;
-        $angulo = -45;
-        $color = [0.28, 0.28, 0.28];
-        $transparencia = 0.16;
-
-        $ancho = $canvas->get_width();
-        $alto = $canvas->get_height();
-
-        $largo = $metricas->getTextWidth($texto, $fuente, $tamano);
-
-        // Ojo: CPDF coloca el texto descontando la altura de fuente SIN el
-        // factor de interlineado que aplica getFontHeight(). Se divide por ese
-        // factor para descontar exactamente lo mismo y no quedar descentrado.
-        $altura = $metricas->getFontHeight($fuente, $tamano)
-            / $dompdf->getOptions()->getFontHeightRatio();
-
-        $radianes = deg2rad(abs($angulo));
-        $avanceX = cos($radianes);
-        $avanceY = sin($radianes);
-
-        // El centro óptico de las mayúsculas va media altura por encima de la
-        // línea base, así que la base baja ese tanto para quedar centrada.
-        $centroX = $ancho / 2;
-        $centroY = ($alto / 2) + ($tamano * 0.36);
-
-        $x = $centroX - ($largo / 2) * $avanceX;
-        $y = $centroY + ($largo / 2) * $avanceY - $altura;
-
-        // Se dibuja con page_script y no con page_text porque en un PDF la
-        // transparencia es un estado de dibujo: afecta a lo que se pinta
-        // DESPUÉS de fijarla. Aquí se fija en cada página, justo antes de la
-        // marca, y se devuelve a 1 para no afectar al resto.
-        $canvas->page_script(
-            function ($numero, $total, $lienzo) use ($x, $y, $texto, $fuente, $tamano, $color, $angulo, $transparencia) {
-                $lienzo->set_opacity($transparencia);
-                $lienzo->text($x, $y, $texto, $fuente, $tamano, $color, 0, 0, $angulo);
-                $lienzo->set_opacity(1);
-            }
-        );
     }
 
     /* ======================================================================
@@ -734,13 +694,5 @@ class DailyPlanController extends Controller
             'message' => $message,
             'errors' => $errors,
         ], $status);
-    }
-
-    /** Nombre del archivo PDF del día. */
-    private function pdfFileName(DailyPlan $plan, bool $marca = false): string
-    {
-        $sufijo = $marca ? '-muestra' : '';
-
-        return 'planificador-diario-'.Helper::date($plan->plan_date, 'Y-m-d').$sufijo.'.pdf';
     }
 }

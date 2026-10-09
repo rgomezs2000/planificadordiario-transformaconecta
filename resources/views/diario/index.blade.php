@@ -280,7 +280,9 @@
                 var acciones = [
                     ['modificar', 'bi-pencil-square', 'Modificar'],
                     ['ver', 'bi-eye', 'Ver'],
-                    ['pdf', 'bi-file-earmark-pdf', 'Generar PDF'],
+                    // Un solo botón de documentos: abre el modal, donde se elige
+                    // entre el PDF y la imagen (y si lleva la marca de agua).
+                    ['pdf', 'bi-file-earmark-pdf', 'Imprimir PDF o imagen'],
                     ['eliminar', 'bi-trash', 'Eliminar']
                 ];
 
@@ -398,8 +400,12 @@
                     return;
                 }
 
-                if (accion === 'pdf') {
-                    P.Impresion.abrir(id);
+                // Los dos formatos abren el mismo modal: ahí se elige entre PDF
+                // e imagen, y si el documento lleva la marca de agua.
+                if (accion === 'pdf' || accion === 'imagen') {
+                    if (P.Impresion) {
+                        P.Impresion.abrir(id);
+                    }
 
                     return;
                 }

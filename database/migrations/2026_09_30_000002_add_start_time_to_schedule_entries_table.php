@@ -25,12 +25,16 @@ return new class extends Migration
             $table->foreignId('schedule_slot_id')->nullable()->change();
         });
 
-        // Las franjas que ya existían toman la hora del catálogo.
+        // Las franjas que ya existían toman la hora del catálogo. Se escribe con
+        // una subconsulta correlacionada —y no con un update ... join— para que
+        // la migración corra igual en MySQL y en el sqlite de las pruebas.
         DB::statement(
-            'update schedule_entries as se
-             join schedule_slots as ss on ss.id = se.schedule_slot_id
-             set se.start_time = ss.start_time
-             where se.start_time is null'
+            'update schedule_entries
+             set start_time = (
+                 select ss.start_time from schedule_slots ss where ss.id = schedule_entries.schedule_slot_id
+             )
+             where start_time is null
+               and schedule_slot_id is not null'
         );
     }
 

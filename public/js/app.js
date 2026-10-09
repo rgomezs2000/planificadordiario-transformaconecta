@@ -382,7 +382,7 @@ window.Planificador = window.Planificador || {};
     };
 
     /* ======================================================================
-       Impresión del diario (PDF con o sin marca de agua)
+       Documentos del diario (PDF e imagen, con o sin marca de agua)
        ====================================================================== */
 
     P.Impresion = {
@@ -390,8 +390,10 @@ window.Planificador = window.Planificador || {};
         opciones: {
             selectorModal: '#modalImprimir',
             selectorMarca: '#imprimir-marca',
-            selectorGenerar: '#imprimir-generar',
-            selectorDisparadores: '[data-accion="pdf"], #imprimir-diario'
+            // Los dos botones del pie: cada uno declara su formato y su
+            // dirección en el propio HTML, así acá no hay nada hardcodeado.
+            selectorGenerar: '#modalImprimir [data-formato]',
+            selectorDisparadores: '[data-accion="pdf"], [data-accion="imagen"], #imprimir-diario'
         },
 
         modal: null,
@@ -417,7 +419,9 @@ window.Planificador = window.Planificador || {};
 
             $(this.opciones.selectorGenerar)
                 .off('click.pfImprimir')
-                .on('click.pfImprimir', $.proxy(this.generar, this));
+                .on('click.pfImprimir', $.proxy(function (evento) {
+                    this.generar(evento.currentTarget);
+                }, this));
 
             return this;
         },
@@ -439,20 +443,32 @@ window.Planificador = window.Planificador || {};
         },
 
         /**
-         * Comprueba en el servidor que el diario exista y abre el PDF en otra
-         * pestaña. Si no existe, el aviso de error lo muestra Planificador.Ajax.
+         * Comprueba en el servidor que el diario exista y entrega el documento
+         * pedido:
+         *
+         *   - el PDF se abre en otra pestaña, listo para imprimir o guardar;
+         *   - la imagen se descarga (un JPG, o un ZIP con una imagen por página
+         *     si el PDF tiene dos o más).
+         *
+         * El botón que se pulsó trae el formato en data-formato y su dirección
+         * en data-url. Si el diario no existe, el aviso lo muestra
+         * Planificador.Ajax.
          */
-        generar: function () {
+        generar: function (boton) {
             var self = this;
             var id = this.planId;
+            var $boton = $(boton);
+            var formato = $boton.attr('data-formato') === 'imagen' ? 'imagen' : 'pdf';
 
             if (! id) {
-                P.Alerta.error('No se identificó el diario que quieres imprimir.');
+                P.Alerta.error('No se identificó el diario que quieres generar.');
 
                 return this;
             }
 
             var $modal = $(this.opciones.selectorModal);
+            var marca = $(this.opciones.selectorMarca).is(':checked') ? 1 : 0;
+            var destino = this.url($boton.attr('data-url'), id) + '?marca=' + marca;
 
             P.Ajax.peticion({
                 url: this.url($modal.attr('data-url-detalle'), id),
@@ -462,16 +478,40 @@ window.Planificador = window.Planificador || {};
                     }
                 },
                 alExito: function () {
-                    var marca = $(self.opciones.selectorMarca).is(':checked') ? 1 : 0;
-                    var destino = self.url($modal.attr('data-url-imprimir'), id) + '?marca=' + marca;
-
                     if (self.modal) {
                         self.modal.hide();
+                    }
+
+                    if (formato === 'imagen') {
+                        self.descargar(destino);
+
+                        return;
                     }
 
                     window.open(destino, '_blank');
                 }
             });
+
+            return this;
+        },
+
+        /**
+         * Descarga un archivo sin salir de la página.
+         *
+         * Si el servidor no pudo generarlo contesta en JSON con el aviso (por
+         * ejemplo, cuando falta el conversor de PDF a JPG); en ese caso se
+         * muestra el mensaje en vez de bajar un archivo roto.
+         */
+        descargar: function (url) {
+            var enlace = document.createElement('a');
+
+            enlace.href = url;
+            enlace.download = '';
+            enlace.style.display = 'none';
+
+            document.body.appendChild(enlace);
+            enlace.click();
+            document.body.removeChild(enlace);
 
             return this;
         }

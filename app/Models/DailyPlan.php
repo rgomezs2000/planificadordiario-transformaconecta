@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Documentos\DocumentoDelDiario;
 use App\Errores\RegistroDeErrores;
 use App\Filtros\Periodo;
 use App\Helpers\Helper;
@@ -383,18 +384,27 @@ class DailyPlan extends Model
 
             $this->applyDayData($data);
 
+            // El PDF y el JPG guardados ya no representan al día: se borran y
+            // se vuelven a generar la próxima vez que se pidan.
+            DocumentoDelDiario::de($this)->limpiar();
+
             return $this->fresh(self::FULL_RELATIONS);
         }, 'modificar el día', ['diario_id' => $this->id]);
     }
 
-    /** Elimina el día; las claves foráneas en cascada limpian sus hijos. */
+    /**
+     * Elimina el día; las claves foráneas en cascada limpian sus hijos.
+     *
+     * También se lleva los archivos generados en el almacenamiento privado (el
+     * PDF y su imagen), para no dejar documentos de un diario que ya no existe.
+     */
     public function deleteDay(): bool
     {
-        return (bool) static::enTransaccion(
-            fn () => $this->delete(),
-            'eliminar el día',
-            ['diario_id' => $this->id]
-        );
+        return (bool) static::enTransaccion(function () {
+            DocumentoDelDiario::de($this)->limpiar();
+
+            return $this->delete();
+        }, 'eliminar el día', ['diario_id' => $this->id]);
     }
 
     /** ¿Se registró el cierre del día? */

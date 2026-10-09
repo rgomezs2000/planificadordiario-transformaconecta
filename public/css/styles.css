@@ -1324,6 +1324,10 @@ div.dt-container .dt-info {
     background: var(--tc-naranja);
 }
 
+.tf-accion--imagen:hover {
+    background: var(--tc-turquesa);
+}
+
 .tf-accion--eliminar {
     color: var(--tc-rojo);
 }
@@ -1978,7 +1982,114 @@ textarea.form-control {
 }
 
 /* ==========================================================================
-   9. FORMATOS DE PANTALLA
+   9. PLANIFICACIÓN PERIÓDICA
+   --------------------------------------------------------------------------
+   El módulo que monta el libro de Excel y muestra lo que dejó la corrida de
+   las 00:00: la tarjeta de la plantilla, el formulario para montar el libro,
+   la cola y el detalle de cada hoja.
+   ========================================================================== */
+
+/* Insignia de estado: la misma forma para todas, el color cambia. */
+.tf-insignia {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--tc-gris-200);
+    color: var(--tc-azul-oscuro);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tf-insignia--azul {
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+}
+
+.tf-insignia--turquesa {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tf-insignia--naranja {
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+}
+
+.tf-insignia--rojo {
+    background: #fbe7e7;
+    color: var(--tc-rojo);
+}
+
+.tf-insignia--gris {
+    background: var(--tc-gris-200);
+    color: var(--tc-gris-500);
+}
+
+/* El bloque para montar el libro. */
+.tf-montar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.8rem;
+}
+
+.tf-montar__campo {
+    flex: 1 1 18rem;
+}
+
+.tf-montar__archivo {
+    padding: 0.55rem 0.7rem;
+    border: 1px dashed var(--tc-turquesa);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-turquesa-tenue);
+}
+
+/* Las reglas de la corrida, en una lista simple. */
+.tf-reglas {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.85rem;
+}
+
+.tf-reglas li {
+    margin-bottom: 0.35rem;
+}
+
+.tf-reglas strong {
+    color: var(--tc-texto);
+}
+
+/* Los avisos de una hoja, dentro de la tabla del detalle. */
+.tf-avisos {
+    margin: 0.2rem 0 0;
+    padding-left: 1rem;
+    color: var(--tc-naranja-oscuro);
+    font-size: 0.78rem;
+}
+
+.tf-planificacion__motivo {
+    color: var(--tc-gris-500);
+    font-size: 0.82rem;
+}
+
+.tf-planificacion__cifras {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.82rem;
+}
+
+.tf-planificacion__cifras strong {
+    color: var(--tc-texto);
+}
+
+/* ==========================================================================
+   10. FORMATOS DE PANTALLA
    --------------------------------------------------------------------------
    La hoja de estilos es "mobile first": lo de arriba ya sirve para móviles.
    Estos son los cortes previstos, uno por cada formato pedido:

@@ -401,9 +401,12 @@
              ================================================================== --}}
         <div class="tf-acciones">
             @if ($soloLectura)
+                {{-- Un solo botón de documentos, igual que en el listado: abre el
+                     modal, donde se elige entre PDF e imagen y si lleva la marca
+                     de agua. --}}
                 <button type="button" class="tc-boton tc-boton--naranja" id="imprimir-diario"
-                        data-id="{{ $plan?->id }}">
-                    <i class="bi bi-printer" aria-hidden="true"></i> Imprimir
+                        data-accion="pdf" data-id="{{ $plan?->id }}">
+                    <i class="bi bi-printer" aria-hidden="true"></i> Imprimir PDF/imagen
                 </button>
                 <a class="tc-boton tc-boton--contorno" href="{{ route('diario.listado') }}">
                     <i class="bi bi-arrow-left" aria-hidden="true"></i> Volver al listado

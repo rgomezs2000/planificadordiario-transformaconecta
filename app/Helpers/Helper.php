@@ -5,6 +5,7 @@ namespace App\Helpers;
 use Carbon\Carbon;
 use DateTimeInterface;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Shared\Date as FechaExcel;
 use Throwable;
 
 /**
@@ -612,5 +613,219 @@ class Helper
     public static function fallback(mixed $value, string $default = '—'): string
     {
         return self::isBlank($value) ? $default : (string) $value;
+    }
+
+    /* ======================================================================
+     |  Planificación periódica (Excel)
+     |
+     |  Lo que usa el módulo "Planificación periódica" para leer el libro que
+     |  se monta y para servir la plantilla estática: comparar nombres de
+     |  catálogos sin acentos ni mayúsculas, y entender las fechas, las horas
+     |  y los Sí/No tal como los escribe Excel.
+     ====================================================================== */
+
+    /**
+     * Texto comparable: minúsculas, sin acentos y con los espacios de más
+     * quitados.
+     *
+     * Es lo que permite reconocer un nombre del catálogo aunque venga escrito
+     * distinto: "Todo lo necesario para mis actividades" y
+     * "todo lo necesario para mis ACTIVIDADES " son el mismo ítem.
+     */
+    public static function normalize(?string $value): string
+    {
+        return strtr(self::lower(self::strip($value)), [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+            'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+            'ñ' => 'n', 'ç' => 'c',
+        ]);
+    }
+
+    /** La fecha con la que se nombra la hoja de un día: "2026-10-04". */
+    public static function sheetNameForDate(mixed $value): string
+    {
+        return self::toCarbon($value)?->format('Y-m-d') ?? '';
+    }
+
+    /**
+     * La fecha que esconde el nombre de una hoja del libro, o null si el
+     * nombre no es una fecha.
+     *
+     * Se aceptan las formas que Excel deja escribir en el nombre de una hoja
+     * (sin barras, que están prohibidas): 2026-10-04, 04-10-2026, 2026_10_04,
+     * 04.10.2026 y 20261004.
+     */
+    public static function dateFromSheetName(?string $name): ?Carbon
+    {
+        $texto = self::strip($name);
+
+        if ($texto === '') {
+            return null;
+        }
+
+        foreach (['Y-m-d', 'd-m-Y', 'Y_m_d', 'd_m_Y', 'Y.m.d', 'd.m.Y', 'Ymd'] as $formato) {
+            try {
+                // El "!" deja la hora en 00:00, para no arrastrar la del reloj.
+                $fecha = Carbon::createFromFormat('!'.$formato, $texto);
+            } catch (Throwable) {
+                continue;
+            }
+
+            $fallos = \DateTime::getLastErrors();
+
+            // Si PHP avisa de algo (por ejemplo 31/02) se prueba el siguiente.
+            if ($fecha && ($fallos === false || ($fallos['warning_count'] === 0 && $fallos['error_count'] === 0))) {
+                return $fecha->startOfDay();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * La fecha de una celda del Excel: número de serie, fecha real o texto.
+     * Devuelve null si la celda está vacía o no se entiende.
+     */
+    public static function dateFromSpreadsheet(mixed $value): ?Carbon
+    {
+        if ($value instanceof DateTimeInterface) {
+            return Carbon::instance($value)->startOfDay();
+        }
+
+        if (is_numeric($value)) {
+            try {
+                return Carbon::instance(FechaExcel::excelToDateTimeObject((float) $value))->startOfDay();
+            } catch (Throwable) {
+                return null;
+            }
+        }
+
+        return self::toCarbon($value)?->startOfDay();
+    }
+
+    /**
+     * La hora de una celda del Excel en "H:i", o null si no se entiende.
+     *
+     * Acepta la fracción de día que guarda Excel (0,3541666 = 08:30), una hora
+     * suelta ("8" = 08:00, que es lo que queda cuando alguien escribe el número
+     * sin formato de hora), una fecha completa y el texto "08:30" / "8:30 a. m.".
+     */
+    public static function timeFromSpreadsheet(mixed $value): ?string
+    {
+        if ($value instanceof DateTimeInterface) {
+            return Carbon::instance($value)->format('H:i');
+        }
+
+        if (is_numeric($value)) {
+            $numero = (float) $value;
+
+            // Fracción de día (así guarda Excel las horas).
+            if ($numero >= 0 && $numero < 1) {
+                return gmdate('H:i', (int) round($numero * 86400) % 86400);
+            }
+
+            // Hora suelta escrita como número: 7 -> 07:00.
+            if ($numero === floor($numero) && $numero >= 0 && $numero <= 23) {
+                return sprintf('%02d:00', (int) $numero);
+            }
+
+            // Fecha y hora completas.
+            try {
+                return Carbon::instance(FechaExcel::excelToDateTimeObject($numero))->format('H:i');
+            } catch (Throwable) {
+                return null;
+            }
+        }
+
+        $texto = self::strip($value);
+
+        if ($texto === '') {
+            return null;
+        }
+
+        foreach (['H:i', 'H:i:s', 'G:i', 'G:i:s', 'g:i a', 'g:i A', 'H'] as $formato) {
+            try {
+                $hora = Carbon::createFromFormat('!'.$formato, $texto);
+            } catch (Throwable) {
+                continue;
+            }
+
+            $fallos = \DateTime::getLastErrors();
+
+            if ($hora && ($fallos === false || ($fallos['warning_count'] === 0 && $fallos['error_count'] === 0))) {
+                return $hora->format('H:i');
+            }
+        }
+
+        return null;
+    }
+
+    /** Fecha y hora juntas, para los bloques de acción: "2026-10-04 08:30:00". */
+    public static function dateTimeFrom(mixed $date, mixed $time): ?Carbon
+    {
+        $dia = self::toCarbon($date);
+        $hora = self::timeFromSpreadsheet($time);
+
+        if (! $dia || $hora === null) {
+            return null;
+        }
+
+        return self::toCarbon($dia->format('Y-m-d').' '.$hora);
+    }
+
+    /**
+     * El Sí/No de una celda del Excel.
+     *
+     * Devuelve true o false para lo que se entiende (Sí, No, X, 1, 0, TRUE…) y
+     * null cuando el valor no dice nada, para que quien lee decida si eso es un
+     * aviso o un motivo para saltar la hoja.
+     */
+    public static function boolFromSpreadsheet(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (self::isBlank($value)) {
+            return false;
+        }
+
+        if (is_numeric($value)) {
+            return (float) $value !== 0.0;
+        }
+
+        return match (self::normalize((string) $value)) {
+            'si', 's', 'x', '1', 'true', 'verdadero', 'yes', 'y', 'ok' => true,
+            'no', 'n', '0', 'false', 'falso', 'na' => false,
+            default => null,
+        };
+    }
+
+    /**
+     * Un nombre de archivo seguro para guardar en el disco privado: sin
+     * acentos, sin espacios y sin nada que pueda salirse de la carpeta.
+     *
+     *     Helper::safeFileName('Planilla Octubre 2026.xlsx')
+     *     // planilla-octubre-2026.xlsx
+     */
+    public static function safeFileName(?string $name, string $fallback = 'planificacion.xlsx'): string
+    {
+        $original = self::strip($name);
+        $extension = self::lower(pathinfo($original, PATHINFO_EXTENSION));
+        $base = pathinfo($original, PATHINFO_FILENAME);
+
+        $base = preg_replace('/[^a-z0-9._-]+/', '-', self::normalize($base)) ?? '';
+        $base = trim(preg_replace('/-+/', '-', $base) ?? '', '-._');
+        $extension = preg_replace('/[^a-z0-9]/', '', $extension) ?? '';
+
+        if ($base === '') {
+            $base = pathinfo($fallback, PATHINFO_FILENAME);
+        }
+
+        if ($base === '' || $base === null) {
+            $base = 'planificacion';
+        }
+
+        return mb_substr($base, 0, 60).'.'.($extension === '' ? 'xlsx' : $extension);
     }
 }

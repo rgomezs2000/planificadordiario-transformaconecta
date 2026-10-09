@@ -18,6 +18,10 @@
 /public/storage
 /storage/*.key
 /storage/pail
+# Documentos generados (PDF e imágenes) y binarios del conversor: son archivos
+# privados de la aplicación y no tienen por qué viajar en el repositorio.
+/storage/app/private/documentos/
+/storage/app/private/binarios/
 /vendor
 Homestead.json
 Homestead.yaml
