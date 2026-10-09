@@ -115,6 +115,73 @@ class ArchivosDePlanificacion
         ];
     }
 
+    /**
+     * Todas las planillas guardadas: la genérica (la que se duplica a mano) y
+     * las de un período, que ya traen una hoja por día.
+     *
+     * La genérica va primero y las demás de la más nueva a la más vieja.
+     *
+     * @return list<array{nombre: string, peso: string, modificado: string, generica: bool, periodo: ?string}>
+     */
+    public static function plantillas(): array
+    {
+        $plantillas = [];
+
+        foreach (self::disco()->files(self::CARPETA_FORMATO) as $ruta) {
+            if (strtolower(pathinfo($ruta, PATHINFO_EXTENSION)) !== self::EXTENSION) {
+                continue;
+            }
+
+            $nombre = basename($ruta);
+
+            $plantillas[] = [
+                'nombre' => $nombre,
+                'peso' => Helper::fileSize((int) self::disco()->size($ruta)),
+                'modificado' => Helper::dateTime((int) self::disco()->lastModified($ruta)),
+                'generica' => $nombre === self::PLANTILLA,
+                'periodo' => self::periodoDeLaPlantilla($nombre),
+                'orden' => (int) self::disco()->lastModified($ruta),
+            ];
+        }
+
+        usort($plantillas, function (array $a, array $b) {
+            // La genérica primero; después, la más nueva primero.
+            if ($a['generica'] !== $b['generica']) {
+                return $a['generica'] ? -1 : 1;
+            }
+
+            return $b['orden'] <=> $a['orden'];
+        });
+
+        return array_map(function (array $plantilla) {
+            unset($plantilla['orden']);
+
+            return $plantilla;
+        }, $plantillas);
+    }
+
+    /** ¿Ese archivo es una de las planillas guardadas? */
+    public static function esPlantilla(string $nombre): bool
+    {
+        foreach (self::plantillas() as $plantilla) {
+            if ($plantilla['nombre'] === $nombre) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** El período que cubre una planilla por su nombre ("2026-10-01_2026-10-31"). */
+    private static function periodoDeLaPlantilla(string $nombre): ?string
+    {
+        if (preg_match('/^planilla-(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.xlsx$/', $nombre, $partes) !== 1) {
+            return null;
+        }
+
+        return Helper::rangeLabel($partes[1], $partes[2]);
+    }
+
     /* ======================================================================
      |  Los libros de la cola
      ====================================================================== */

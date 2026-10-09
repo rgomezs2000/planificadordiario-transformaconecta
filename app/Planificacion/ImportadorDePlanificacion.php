@@ -241,9 +241,16 @@ class ImportadorDePlanificacion
                 $hecho = false;
             }
 
+            // La etiqueta de la fila viene numerada ("1 · Debo hacer"): se busca
+            // el tipo por su nombre y, si no coincide, por la posición de la
+            // ranura. Así el tipo siempre queda en su lugar.
+            $tipo = self::sinNumeroDeRanura($etiqueta);
+
             $objetivos[] = [
                 'slot' => $ranura,
-                'goal_type_id' => $catalogos['objetivos'][Helper::normalize($etiqueta)] ?? $catalogos['objetivos_por_ranura'][$ranura] ?? null,
+                'goal_type_id' => $catalogos['objetivos'][Helper::normalize($tipo)]
+                    ?? $catalogos['objetivos_por_ranura'][$ranura]
+                    ?? null,
                 'description' => $descripcion,
                 'is_done' => $hecho,
             ];
@@ -568,8 +575,10 @@ class ImportadorDePlanificacion
 
             'objetivos' => GoalType::query()->get()
                 ->mapWithKeys(fn (GoalType $tipo) => [Helper::normalize($tipo->name) => $tipo->id])->all(),
-            'objetivos_por_ranura' => GoalType::query()->orderBy('sort_order')->pluck('id', 'sort_order')
-                ->values()->take(DailyPlan::MAX_GOALS)->values()->all(),
+            // La ranura 1, 2 o 3 de la hoja contra el catálogo, en su orden.
+            'objetivos_por_ranura' => GoalType::query()->orderBy('sort_order')->pluck('id')
+                ->take(DailyPlan::MAX_GOALS)->values()
+                ->mapWithKeys(fn (int $id, int $indice) => [$indice + 1 => $id])->all(),
 
             'items' => PreparationItem::query()->get()
                 ->mapWithKeys(fn (PreparationItem $item) => [Helper::normalize($item->name) => $item->id])->all(),
@@ -748,6 +757,15 @@ class ImportadorDePlanificacion
         }
 
         return $fin;
+    }
+
+    /**
+     * Quita el número con el que la hoja rotula las filas de los objetivos
+     * ("1 · Debo hacer" → "Debo hacer"), para poder buscar el tipo por nombre.
+     */
+    private static function sinNumeroDeRanura(string $etiqueta): string
+    {
+        return trim(preg_replace('/^\s*\d+\s*[·.:)\-]\s*/u', '', trim($etiqueta)) ?? $etiqueta);
     }
 
     /** El valor crudo de una celda. */

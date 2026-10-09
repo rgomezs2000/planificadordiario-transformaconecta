@@ -33,7 +33,12 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // serve => false a propósito: con true, Laravel publica las rutas
+            // GET/PUT storage/{path} sobre storage/app/private SIN autenticación,
+            // y ahí viven los Excel de planificación periódica, los PDF e imágenes
+            // de los diarios y el binario de MuPDF. El sistema no las necesita:
+            // todo se entrega por los controladores (response()->file/download).
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

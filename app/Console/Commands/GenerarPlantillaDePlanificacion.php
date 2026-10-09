@@ -27,9 +27,11 @@ use Throwable;
 class GenerarPlantillaDePlanificacion extends Command
 {
     protected $signature = 'planificacion:plantilla
+                            {--desde= : primer día del período (con --hasta genera un libro con una hoja por día)}
+                            {--hasta= : último día del período}
                             {--ejemplo : genera además el libro de ejemplo que usa la prueba --dry-run}';
 
-    protected $description = 'Crea la planilla en blanco del planificador diario (y, si se pide, un libro de ejemplo)';
+    protected $description = 'Crea la planilla del planificador diario: la genérica, la de un período o el libro de ejemplo';
 
     public function handle(): int
     {
@@ -39,6 +41,12 @@ class GenerarPlantillaDePlanificacion extends Command
             .PlantillaDelPlanificador::preguntasDeProcrastinacion()->count().' preguntas · '
             .count(PlantillaDelPlanificador::duracionesDeBloque()).' duraciones · '
             .count(PlantillaDelPlanificador::resultadosDeBloque()).' resultados');
+
+        // Con --desde y --hasta se genera el libro de un período: una hoja por
+        // día, ya nombrada, con la fecha puesta y su lista desplegable.
+        if ($this->option('desde') || $this->option('hasta')) {
+            return $this->periodo();
+        }
 
         try {
             $ruta = PlantillaDelPlanificador::conservar();
@@ -81,6 +89,70 @@ class GenerarPlantillaDePlanificacion extends Command
         $this->info('Libro de ejemplo creado: '.$ejemplo);
         $this->line('  archivo: '.ArchivosDePlanificacion::rutaAbsoluta($ejemplo));
         $this->line('  trae días completos, un día sin cierre (para ver cómo se salta) y las hojas DIA e INSTRUCCIONES.');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * El libro de un período: una hoja por día, ya nombrada con la fecha, con la
+     * fecha puesta y con la lista de días del período para elegirla.
+     */
+    private function periodo(): int
+    {
+        $desde = (string) $this->option('desde');
+        $hasta = (string) $this->option('hasta');
+
+        if ($desde === '' || $hasta === '') {
+            $this->error('Hay que indicar las dos fechas: --desde=2026-10-01 --hasta=2026-10-31.');
+
+            return self::FAILURE;
+        }
+
+        $dias = PlantillaDelPlanificador::diasDelPeriodo($desde, $hasta);
+
+        if ($dias === []) {
+            $this->error('Las fechas no se entienden, están al revés o el período pasa de '
+                .PlantillaDelPlanificador::DIAS_MAXIMOS.' días. Usa el formato aaaa-mm-dd.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            $ruta = PlantillaDelPlanificador::conservarPeriodo($desde, $hasta);
+        } catch (Throwable $e) {
+            report($e);
+            RegistroDeErrores::registrar($e, 500, 'comando', [
+                'operacion' => 'crear la planilla de un período',
+                'comando' => 'planificacion:plantilla --desde --hasta',
+                'desde' => $desde,
+                'hasta' => $hasta,
+            ]);
+
+            $this->error('No se pudo crear la planilla del período: '.$e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if ($ruta === '') {
+            $this->error('No se pudo crear la planilla del período.');
+
+            return self::FAILURE;
+        }
+
+        $this->info('Planilla del período creada: '.$ruta);
+        $this->line('  archivo: '.ArchivosDePlanificacion::rutaAbsoluta($ruta));
+        $this->line('  peso:    '.Helper::fileSize((int) filesize(ArchivosDePlanificacion::rutaAbsoluta($ruta))));
+        $this->line('  hojas:   '.count($dias).' días ('
+            .Helper::shortDate($dias[0]).' a '.Helper::shortDate(end($dias))
+            .'), la hoja oculta '.PlantillaDelPlanificador::HOJA_LISTAS
+            .' y '.PlantillaDelPlanificador::HOJA_INSTRUCCIONES.' al final');
+        $this->line('  cada hoja ya está nombrada con su fecha y trae la fecha puesta con su lista desplegable.');
+
+        if ($this->option('ejemplo')) {
+            $ejemplo = PlantillaDelPlanificador::conservarEjemplo();
+
+            $this->info('Libro de ejemplo creado: '.$ejemplo);
+        }
 
         return self::SUCCESS;
     }

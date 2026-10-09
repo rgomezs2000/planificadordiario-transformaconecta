@@ -80,11 +80,22 @@ Route::prefix('diario')->name('diario.')->group(function () {
 Route::prefix('planificacion')->name('planificacion.')->group(function () {
     Route::get('/', [PlanificacionController::class, 'index'])->name('index');
 
-    // Descargar la planilla en blanco (dirección fija, siempre la misma)
-    Route::get('/plantilla', [PlanificacionController::class, 'plantilla'])->name('plantilla');
+    // Descargar la planilla: sin argumento, la genérica; con el nombre, la de un
+    // período (una hoja por día). La dirección de la genérica no cambia nunca.
+    Route::get('/plantilla/{archivo?}', [PlanificacionController::class, 'plantilla'])
+        ->where('archivo', '[A-Za-z0-9._-]+')
+        ->name('plantilla');
 
     // Montar un libro en la cola
     Route::post('/', [PlanificacionController::class, 'store'])->name('store');
+
+    // La cola sola, para que el módulo la refresque por AJAX sin recargar
+    Route::get('/cola', [PlanificacionController::class, 'cola'])->name('cola');
+
+    // Sacar varios libros de la cola de una sola vez (lo llama el AJAX del
+    // módulo). Va con dos segmentos para no confundirse con /{archivo}.
+    Route::delete('/cola/lote', [PlanificacionController::class, 'descartarVarios'])
+        ->name('descartar.varios');
 
     // Sacar un libro de la cola sin procesarlo
     Route::delete('/{archivo}', [PlanificacionController::class, 'descartar'])

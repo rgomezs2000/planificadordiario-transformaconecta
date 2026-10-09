@@ -616,6 +616,20 @@ a:hover {
     color: var(--tc-blanco);
 }
 
+/* Rojo institucional: para lo que borra (quitar libros de la cola). */
+.tc-boton--rojo {
+    background: var(--tc-rojo);
+    color: var(--tc-blanco);
+}
+
+.tc-boton--rojo:disabled,
+.tc-boton--rojo[disabled] {
+    background: var(--tc-gris-300);
+    color: var(--tc-gris-500);
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+
 .tc-boton--contorno {
     background: transparent;
     border-color: var(--tc-azul);
@@ -2086,6 +2100,66 @@ textarea.form-control {
 
 .tf-planificacion__cifras strong {
     color: var(--tc-texto);
+}
+
+/* Barra de acciones de la cola: el botón de eliminar y el contador. */
+.tf-cola__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1rem;
+    margin-bottom: 0.8rem;
+}
+
+/* La columna de las casillas: angosta y centrada. */
+.tf-cola__col-check {
+    width: 2.4rem;
+    text-align: center;
+}
+
+.tf-cola__col-check .form-check-input {
+    margin: 0;
+    cursor: pointer;
+}
+
+/* La fila de filtros de la cola: misma franja que el encabezado, pero clara y
+   sin mayúsculas, para que los campos se lean como campos. */
+.tf-tabla thead tr.tf-cola__filtros th {
+    padding: 0.35rem 0.3rem;
+    background-color: var(--tc-gris-100) !important;
+    color: var(--tc-texto) !important;
+    font-weight: 400;
+    text-transform: none;
+}
+
+.tf-tabla thead tr.tf-cola__filtros .form-control,
+.tf-tabla thead tr.tf-cola__filtros .form-select {
+    font-size: 0.78rem;
+    font-weight: 400;
+    text-transform: none;
+}
+
+/* El cartel de "En vivo": late cada vez que la cola se refresca sola. */
+.tf-cola__latido {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: auto;
+    color: var(--tc-turquesa-oscuro);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.tf-cola__latido--activo i {
+    animation: tf-latido 900ms ease-in-out;
+}
+
+@keyframes tf-latido {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg); color: var(--tc-naranja); }
+    100% { transform: rotate(360deg); }
 }
 
 /* ==========================================================================

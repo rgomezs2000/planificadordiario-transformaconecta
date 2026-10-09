@@ -84,9 +84,13 @@ class PlantillaDelPlanificador
      * Hojas que la corrida mira como si no existieran.
      *
      * INSTRUCCIONES se puede dejar o borrar antes de entregar el libro: el
-     * resultado de la corrida es exactamente el mismo.
+     * resultado de la corrida es exactamente el mismo. LISTAS es la hoja oculta
+     * donde viven las fechas del período que ofrece el desplegable.
      */
-    public const HOJAS_IGNORADAS = [self::HOJA_INSTRUCCIONES];
+    public const HOJAS_IGNORADAS = [self::HOJA_INSTRUCCIONES, self::HOJA_LISTAS];
+
+    /** La hoja oculta con las fechas del período. */
+    public const HOJA_LISTAS = 'LISTAS';
 
     /** Hojas de apoyo que la corrida nombra en el reporte, por si hubo un olvido. */
     public const HOJAS_AUXILIARES = [self::HOJA_DIA];
@@ -166,8 +170,14 @@ class PlantillaDelPlanificador
         self::TITULO_NOTAS,
     ];
 
-    /** Cuántas franjas de horario trae la hoja en blanco. */
+    /** Cuántas franjas de horario trae la hoja en blanco (las del catálogo). */
     public const FRANJAS = 15;
+
+    /** Franjas vacías de más, ya con sus listas, para no tener que insertar filas. */
+    public const FRANJAS_DE_MAS = 5;
+
+    /** Tope de días que puede abarcar un libro de período. */
+    public const DIAS_MAXIMOS = 366;
 
     /* ======================================================================
      |  Generar el libro
@@ -241,11 +251,116 @@ class PlantillaDelPlanificador
     }
 
     /* ======================================================================
+     |  El libro de un período: una hoja por día
+     ====================================================================== */
+
+    /**
+     * El libro de un período: una hoja por día, ya nombrada con la fecha, con la
+     * fecha puesta y con la lista de días del período para cambiarla.
+     *
+     * Es la forma cómoda de repartir la planilla: nadie tiene que duplicar ni
+     * renombrar hojas, solo llenarlas. Excel no tiene calendario desplegable en
+     * un .xlsx normal, así que la fecha se elige de una lista con los días del
+     * período (hoja oculta LISTAS), que es lo más parecido que se puede hacer
+     * sin macros.
+     */
+    public static function generarPeriodo(string $desde, string $hasta): Spreadsheet
+    {
+        $fechas = self::diasDelPeriodo($desde, $hasta);
+
+        $libro = new Spreadsheet;
+        $primera = true;
+
+        foreach ($fechas as $fecha) {
+            $hoja = $primera ? $libro->getActiveSheet() : $libro->createSheet();
+            $primera = false;
+
+            self::armarDia($hoja, $fecha, $fechas);
+        }
+
+        if ($fechas !== []) {
+            self::armarListasDeFechas($libro->createSheet(), $fechas);
+        }
+
+        self::armarInstrucciones($libro->createSheet());
+        self::estiloDelLibro($libro);
+
+        return $libro;
+    }
+
+    /**
+     * Los días del período, como fechas "aaaa-mm-dd". Devuelve una lista vacía
+     * si las fechas no se entienden, si están al revés o si el período pasa del
+     * tope (un libro con cientos de hojas no es práctico).
+     *
+     * @return list<string>
+     */
+    public static function diasDelPeriodo(string $desde, string $hasta): array
+    {
+        $inicio = Helper::toCarbon($desde);
+        $fin = Helper::toCarbon($hasta);
+
+        if (! $inicio || ! $fin || $fin->lessThan($inicio)) {
+            return [];
+        }
+
+        if ($inicio->diffInDays($fin) + 1 > self::DIAS_MAXIMOS) {
+            return [];
+        }
+
+        $dias = [];
+
+        for ($dia = $inicio->copy(); $dia->lessThanOrEqualTo($fin); $dia->addDay()) {
+            $dias[] = $dia->format('Y-m-d');
+        }
+
+        return $dias;
+    }
+
+    /** Guarda el libro del período en la carpeta de las plantillas. */
+    public static function conservarPeriodo(string $desde, string $hasta): string
+    {
+        $inicio = Helper::toCarbon($desde);
+        $fin = Helper::toCarbon($hasta);
+
+        if (! $inicio || ! $fin || self::diasDelPeriodo($desde, $hasta) === []) {
+            return '';
+        }
+
+        $ruta = ArchivosDePlanificacion::CARPETA_FORMATO.'/'.self::nombreDePeriodo($inicio->format('Y-m-d'), $fin->format('Y-m-d'));
+
+        ArchivosDePlanificacion::disco()->put($ruta, self::contenido(self::generarPeriodo($desde, $hasta)));
+
+        return $ruta;
+    }
+
+    /** Cómo se llama el archivo de un período. */
+    public static function nombreDePeriodo(string $desde, string $hasta): string
+    {
+        return 'planilla-'.$desde.'_'.$hasta.'.xlsx';
+    }
+
+    /** La hoja oculta con los días del período, para la lista desplegable. */
+    private static function armarListasDeFechas(Worksheet $hoja, array $fechas): Worksheet
+    {
+        $hoja->setTitle(self::HOJA_LISTAS);
+        $hoja->getColumnDimension('A')->setWidth(14);
+
+        foreach ($fechas as $indice => $fecha) {
+            $hoja->setCellValue('A'.($indice + 1), self::fechaEnPalabras($fecha));
+        }
+
+        $hoja->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
+
+        return $hoja;
+    }
+
+    /* ======================================================================
      |  La hoja de un día
      ====================================================================== */
 
     /** Escribe la hoja completa de un día; el nombre de la hoja es la fecha. */
-    public static function armarDia(Worksheet $hoja, string $nombre): Worksheet
+    public static function armarDia(Worksheet $hoja, string $nombre, array $fechas = []): Worksheet
     {
         $hoja->setTitle($nombre);
 
@@ -262,11 +377,26 @@ class PlantillaDelPlanificador
         $fila = self::separador($hoja, $fila);
 
         // 2. Fecha y energía.
+        $filaFecha = $fila;
+
         $fila = self::filaDeValor(
             $hoja, $fila, self::ETIQUETA_FECHA,
-            'Opcional: si la escribes, tiene que coincidir con el nombre de la hoja.',
+            $fechas === []
+                ? 'Opcional: si la escribes, tiene que coincidir con el nombre de la hoja.'
+                : 'Elige el día de la lista. Manda el nombre de la hoja.',
             $editables, 20, 'DD/MM/YYYY'
         );
+
+        if ($fechas === []) {
+            // Plantilla en blanco: la celda acepta cualquier fecha válida.
+            self::validarFecha($hoja, self::COLUMNA_VALOR.$filaFecha);
+        } else {
+            // Libro de un período: la fecha viene puesta y se puede cambiar por
+            // otro día del mismo período desde la lista.
+            $hoja->setCellValue(self::COLUMNA_VALOR.$filaFecha, self::fechaEnPalabras($nombre));
+            self::listaDeFechas($hoja, self::COLUMNA_VALOR.$filaFecha, count($fechas));
+        }
+
         $fila = self::filaDeValor(
             $hoja, $fila, self::ETIQUETA_ENERGIA,
             'Elige una de la lista.',
@@ -291,13 +421,24 @@ class PlantillaDelPlanificador
         $fila = self::separador($hoja, $fila);
 
         // 4. Mi horario de hoy.
+        //
+        // Cada franja sale con sus dos listas puestas: la hora (las del horario
+        // del sistema) y el Sí/No. Se dejan franjas de más para que no haga
+        // falta insertar filas; si se inserta una en medio del bloque, Excel le
+        // arrastra las mismas listas.
         self::franja($hoja, $fila++, self::TITULO_HORARIO, self::AZUL, 11, true, 20);
         self::encabezados($hoja, $fila++, 'Hora ✱', '¿Qué vas a hacer? ✱', 'Hecho (Sí/No)');
 
-        for ($franja = 0; $franja < self::FRANJAS; $franja++) {
+        $horas = self::horasDelHorario();
+
+        for ($franja = 0; $franja < self::FRANJAS + self::FRANJAS_DE_MAS; $franja++) {
             self::escribible($hoja, $editables, self::COLUMNA_ETIQUETA.$fila);
             self::escribible($hoja, $editables, self::COLUMNA_VALOR.$fila);
             self::escribible($hoja, $editables, self::COLUMNA_DETALLE.$fila);
+            self::lista(
+                $hoja, self::COLUMNA_ETIQUETA.$fila, $horas, DataValidation::STYLE_WARNING,
+                'Elige la hora de la lista, o escribe otra (por ejemplo 07:30).'
+            );
             self::lista($hoja, self::COLUMNA_DETALLE.$fila, self::SINO);
             $hoja->getRowDimension($fila)->setRowHeight(18);
             $fila++;
@@ -410,22 +551,26 @@ class PlantillaDelPlanificador
             '2. El nombre de la hoja es la fecha del diario: es lo que lee el sistema. Si un nombre no es una fecha, esa hoja se ignora (por eso la hoja DIA se ignora sola).',
             '3. Puedes dejar los días en cualquier orden dentro del libro: la corrida los ordena por fecha.',
             '',
+            'LISTAS Y CELDAS YA PREPARADAS',
+            '4. La energía, los Sí/No, la duración y el resultado del bloque de acción se eligen de una lista desplegable: haz clic en la celda y usa la flecha de la derecha.',
+            '5. La Hora de cada franja también es una lista, con las horas del horario del sistema (07:00 a 21:00). Si necesitas otra hora (por ejemplo 07:30), escríbela: el sistema te avisa, pero la acepta.',
+            '6. El horario trae 20 franjas listas (las 15 del horario y 5 de más), cada una con sus dos listas puestas. Si insertas una fila en medio del horario, Excel le arrastra las mismas listas.',
+            '7. La celda de la FECHA está preparada para escribir una fecha (dd/mm/aaaa). Excel no tiene calendario desplegable en un archivo normal: como el nombre de la hoja es el que manda, esta celda se puede dejar vacía.',
+            '',
             'QUÉ ES OBLIGATORIO EN CADA HOJA',
-            '4. Si falta un solo campo obligatorio, la hoja se salta completa y queda anotada en el reporte del módulo. No se carga a medias.',
-            '5. Son obligatorios: la energía (una de la lista), los 3 objetivos con su descripción, al menos una franja del horario con su hora y su actividad, y los 4 campos del cierre del día (lo que logré, lo pendiente, cuándo lo haré y por qué estoy orgulloso/a).',
-            '6. La fecha de la celda es opcional: si la escribes, tiene que ser la misma del nombre de la hoja.',
-            '7. En el horario, si escribes una hora escribe también su actividad, y si escribes una actividad ponle su hora. Una franja a medias salta la hoja.',
-            '8. Las secciones opcionales (antes de empezar, si estoy procrastinando, bloque de acción y notas) pueden quedar vacías. Lo que no se reconozca ahí se ignora y queda anotado en el reporte.',
-            '9. En las celdas de Sí/No escribe Sí o No (hay lista desplegable).',
+            '8. Si falta un solo campo obligatorio, la hoja se salta completa y queda anotada en el reporte del módulo. No se carga a medias.',
+            '9. Son obligatorios: la energía (una de la lista), los 3 objetivos con su descripción, al menos una franja del horario con su hora y su actividad, y los 4 campos del cierre del día (lo que logré, lo pendiente, cuándo lo haré y por qué estoy orgulloso/a).',
+            '10. En el horario, si escribes una hora escribe también su actividad, y si escribes una actividad ponle su hora. Una franja a medias salta la hoja.',
+            '11. Las secciones opcionales (antes de empezar, si estoy procrastinando, bloque de acción y notas) pueden quedar vacías. Lo que no se reconozca ahí se ignora y queda anotado en el reporte.',
             '',
             'CÓMO SE ENTREGA',
-            '10. No muevas, borres ni agregues filas: la hoja está protegida para evitarlo. Si necesitas tocar la estructura, quita la protección desde Revisar → Quitar protección de hoja, bajo tu responsabilidad.',
-            '11. Cuando el libro esté listo, se monta en el módulo Planificación periódica. El sistema lo procesa solo en la corrida de las 00:00.',
-            '12. Un día que ya está cargado en el sistema no se vuelve a cargar nunca, aunque el libro lo traiga de nuevo: la corrida solo llena lo que falta. Para corregir un día ya cargado se edita desde Consultar diario.',
-            '13. Si un día no llegó a cargarse porque faltaba un dato, corrige la hoja, vuelve a montar el libro y espera la corrida siguiente: esa hoja se reintenta.',
-            '14. Esta hoja de INSTRUCCIONES se ignora siempre. Puedes dejarla o borrarla antes de entregar el libro: el resultado es el mismo.',
+            '12. No muevas, borres ni agregues filas: la hoja está protegida para evitarlo. Si necesitas tocar la estructura, quita la protección desde Revisar → Quitar protección de hoja, bajo tu responsabilidad.',
+            '13. Cuando el libro esté listo, se monta en el módulo Planificación periódica. El sistema lo procesa solo en la corrida de las 00:00.',
+            '14. Un día que ya está cargado en el sistema no se vuelve a cargar nunca, aunque el libro lo traiga de nuevo: la corrida solo llena lo que falta. Para corregir un día ya cargado se edita desde Consultar diario.',
+            '15. Si un día no llegó a cargarse porque faltaba un dato, corrige la hoja, vuelve a montar el libro y espera la corrida siguiente: esa hoja se reintenta.',
+            '16. Esta hoja de INSTRUCCIONES se ignora siempre. Puedes dejarla o borrarla antes de entregar el libro: el resultado es el mismo.',
             '',
-            'HORARIO SUGERIDO (de 7:00 a 21:00, una franja por hora)',
+            'HORARIO DEL SISTEMA (las horas de la lista desplegable de cada franja)',
             self::horarioSugerido(),
         ];
 
@@ -543,13 +688,25 @@ class PlantillaDelPlanificador
         return ActionBlockOutcome::active()->pluck('name')->all();
     }
 
-    /** Las horas del horario diario, para la hoja de instrucciones. */
-    public static function horarioSugerido(): string
+    /**
+     * Las horas del horario diario, tal como salen en la lista desplegable de
+     * cada franja de la hoja (07:00, 08:00… 21:00).
+     *
+     * @return list<string>
+     */
+    public static function horasDelHorario(): array
     {
-        $horas = ScheduleSlot::active()->pluck('start_time')
+        return ScheduleSlot::active()->pluck('start_time')
             ->map(fn (mixed $hora) => Helper::time($hora, 'H:i'))
             ->filter()
+            ->values()
             ->all();
+    }
+
+    /** Esas mismas horas, en una línea, para la hoja de instrucciones. */
+    public static function horarioSugerido(): string
+    {
+        $horas = self::horasDelHorario();
 
         return $horas === [] ? '—' : implode('  ·  ', $horas);
     }
@@ -678,26 +835,109 @@ class PlantillaDelPlanificador
         return $fila + 1;
     }
 
-    /** Lista desplegable sobre un rango (los valores van separados por comas). */
-    private static function lista(Worksheet $hoja, string $rango, array $valores): void
-    {
+    /**
+     * Lista desplegable sobre un rango (los valores van separados por comas).
+     *
+     * Con STYLE_STOP la celda solo acepta lo que está en la lista; con
+     * STYLE_WARNING deja escribir otro valor, avisando: es lo que se usa en las
+     * horas, donde alguien puede necesitar una franja que no está en el catálogo
+     * (por ejemplo 07:30).
+     */
+    private static function lista(
+        Worksheet $hoja,
+        string $rango,
+        array $valores,
+        string $estilo = DataValidation::STYLE_STOP,
+        ?string $ayuda = null
+    ): void {
         if ($valores === []) {
+            return;
+        }
+
+        $estricta = $estilo === DataValidation::STYLE_STOP;
+
+        $validacion = new DataValidation;
+        $validacion->setType(DataValidation::TYPE_LIST);
+        // Ojo con este atributo: en el archivo, «showDropDown» está invertido
+        // (1 = ocultar la flecha). PhpSpreadsheet escribe el valor negado, así
+        // que hay que pedirlo en true para que Excel muestre el desplegable.
+        $validacion->setShowDropDown(true);
+        $validacion->setErrorStyle($estilo);
+        $validacion->setAllowBlank(true);
+        $validacion->setShowErrorMessage(true);
+        $validacion->setErrorTitle('Valor fuera de la lista');
+        $validacion->setError($estricta
+            ? 'Elige uno de los valores de la lista.'
+            : 'Ese valor no está en la lista. Se acepta, pero revísalo antes de seguir.');
+        $validacion->setShowInputMessage(true);
+        $validacion->setPromptTitle('Elige de la lista');
+        $validacion->setPrompt($ayuda ?? 'Usa la flecha de la celda.');
+        $validacion->setFormula1('"'.implode(',', $valores).'"');
+
+        $hoja->setDataValidation($rango, $validacion);
+    }
+
+    /**
+     * La celda de la fecha: se valida como fecha y se muestra dd/mm/aaaa.
+     *
+     * Excel no tiene un calendario desplegable en un archivo .xlsx normal (solo
+     * con macros, en un .xlsm): lo que sí se puede es impedir que entre cualquier
+     * cosa. Se deja con aviso, no con bloqueo, porque la fecha también puede
+     * llegar como texto (aaaa-mm-dd) y esa forma es válida para la corrida.
+     */
+    private static function validarFecha(Worksheet $hoja, string $celda): void
+    {
+        $validacion = new DataValidation;
+        $validacion->setType(DataValidation::TYPE_DATE);
+        $validacion->setOperator(DataValidation::OPERATOR_BETWEEN);
+        $validacion->setShowDropDown(true);
+        $validacion->setAllowBlank(true);
+        $validacion->setShowErrorMessage(true);
+        $validacion->setErrorStyle(DataValidation::STYLE_WARNING);
+        $validacion->setErrorTitle('Fecha fuera de rango');
+        $validacion->setError('Escribe una fecha entre 2020 y 2100, por ejemplo 04/10/2026.');
+        $validacion->setShowInputMessage(true);
+        $validacion->setPromptTitle('Fecha del día');
+        $validacion->setPrompt('Escribe la fecha (dd/mm/aaaa o aaaa-mm-dd). El nombre de la hoja es el que manda.');
+        $validacion->setFormula1('DATE(2020,1,1)');
+        $validacion->setFormula2('DATE(2100,12,31)');
+
+        $hoja->setDataValidation($celda, $validacion);
+    }
+
+    /**
+     * La fecha como lista desplegable con los días del período.
+     *
+     * Los días viven en la hoja oculta LISTAS y la validación apunta a ese rango
+     * (una lista escrita dentro de la fórmula no aguanta más de 255 caracteres:
+     * un mes ya no entra).
+     */
+    private static function listaDeFechas(Worksheet $hoja, string $celda, int $cuantas): void
+    {
+        if ($cuantas < 1) {
             return;
         }
 
         $validacion = new DataValidation;
         $validacion->setType(DataValidation::TYPE_LIST);
-        $validacion->setErrorStyle(DataValidation::STYLE_STOP);
+        $validacion->setShowDropDown(true);
         $validacion->setAllowBlank(true);
         $validacion->setShowErrorMessage(true);
-        $validacion->setErrorTitle('Valor no válido');
-        $validacion->setError('Elige uno de los valores de la lista.');
+        $validacion->setErrorStyle(DataValidation::STYLE_WARNING);
+        $validacion->setErrorTitle('Fecha fuera del período');
+        $validacion->setError('Elige uno de los días del período, o escribe la fecha a mano.');
         $validacion->setShowInputMessage(true);
-        $validacion->setPromptTitle('Elige de la lista');
-        $validacion->setPrompt('Usa la flecha de la celda.');
-        $validacion->setFormula1('"'.implode(',', $valores).'"');
+        $validacion->setPromptTitle('Día del período');
+        $validacion->setPrompt('Elige el día de la lista. El nombre de la hoja es el que manda.');
+        $validacion->setFormula1(self::HOJA_LISTAS.'!$A$1:$A$'.$cuantas);
 
-        $hoja->setDataValidation($rango, $validacion);
+        $hoja->setDataValidation($celda, $validacion);
+    }
+
+    /** Una fecha "aaaa-mm-dd" como se muestra en la hoja: "04/10/2026". */
+    public static function fechaEnPalabras(string $fecha): string
+    {
+        return Helper::date($fecha) ?? $fecha;
     }
 
     /** El estilo de todo el libro: la fuente y el alto de la primera fila. */

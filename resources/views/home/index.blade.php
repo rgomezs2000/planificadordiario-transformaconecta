@@ -74,7 +74,7 @@
         {{-- ============================================================
              Accesos directos (los mismos del menú lateral)
              ============================================================ --}}
-        <div class="col-12 col-md-6">
+        <div class="col-12 col-md-6 col-xl-4">
             <section class="tc-tarjeta tc-tarjeta--completa tc-tarjeta--naranja">
                 <span class="tc-tarjeta__icono tc-tarjeta__icono--naranja">
                     <i class="bi bi-calendar-plus" aria-hidden="true"></i>
@@ -90,7 +90,7 @@
             </section>
         </div>
 
-        <div class="col-12 col-md-6">
+        <div class="col-12 col-md-6 col-xl-4">
             <section class="tc-tarjeta tc-tarjeta--completa">
                 <span class="tc-tarjeta__icono">
                     <i class="bi bi-journal-text" aria-hidden="true"></i>
@@ -102,6 +102,23 @@
                 </p>
                 <a class="tc-boton tc-boton--azul" href="{{ route('diario.listado') }}">
                     Ver mis días
+                </a>
+            </section>
+        </div>
+
+        {{-- El mismo acceso que el menú lateral, para no tener que abrirlo. --}}
+        <div class="col-12 col-md-6 col-xl-4">
+            <section class="tc-tarjeta tc-tarjeta--completa tc-tarjeta--turquesa">
+                <span class="tc-tarjeta__icono tc-tarjeta__icono--turquesa">
+                    <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                </span>
+                <h2 class="tc-tarjeta__titulo">Planificación periódica</h2>
+                <p class="tc-tarjeta__texto">
+                    Descarga la planilla, llena una hoja por día y móntala en la cola: el
+                    sistema crea esos días solo, en la corrida de las 00:00.
+                </p>
+                <a class="tc-boton tc-boton--turquesa" href="{{ route('planificacion.index') }}">
+                    Montar el libro
                 </a>
             </section>
         </div>
