@@ -3,8 +3,10 @@
 namespace App\Planificacion;
 
 use App\Helpers\Helper;
+use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -49,6 +51,19 @@ class ArchivosDePlanificacion
 
     /** Cuánto puede pesar un libro montado (20 MB). */
     public const PESO_MAXIMO = 20480;
+
+    /** Dónde el comando va dejando cómo va la corrida (lo lee la barra de progreso). */
+    public const ARCHIVO_CORRIDA = 'excel/corrida.json';
+
+    /** El log propio de la corrida, al lado de los demás logs de la aplicación. */
+    public const LOG_CORRIDA = 'logs/planificacion-corrida.log';
+
+    /**
+     * Cuántos minutos sin señales se aguantan antes de dar la corrida por
+     * interrumpida. El comando reescribe su estado a cada paso, así que un
+     * silencio largo quiere decir que el proceso ya no está.
+     */
+    public const MINUTOS_SIN_SENALES = 15;
 
     public static function disco(): Filesystem
     {
@@ -275,5 +290,111 @@ class ArchivosDePlanificacion
         $extension = pathinfo($nombre, PATHINFO_EXTENSION) ?: self::EXTENSION;
 
         return $base.'-'.Helper::now()->format('Ymd-His').'.'.$extension;
+    }
+
+    /* ======================================================================
+     |  La corrida: cómo va y su log
+     ====================================================================== */
+
+    /**
+     * Cómo va la corrida, tal como lo dejó el comando.
+     *
+     * El comando escribe este archivo a medida que avanza (y también los
+     * progresos en su log), y el módulo lo lee para mostrar la barra de progreso
+     * del botón "Ejecutar corrida". Nunca lo escribe el navegador.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function estadoDeLaCorrida(): ?array
+    {
+        if (! self::disco()->exists(self::ARCHIVO_CORRIDA)) {
+            return null;
+        }
+
+        try {
+            $datos = json_decode((string) self::disco()->get(self::ARCHIVO_CORRIDA), true);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return is_array($datos) ? $datos : null;
+    }
+
+    /** Deja anotado cómo va la corrida. */
+    public static function guardarEstadoDeLaCorrida(array $estado): void
+    {
+        // El momento de la última señal: si no lo pone quien llama, es ahora.
+        $estado['actualizado_en'] = $estado['actualizado_en'] ?? Helper::now()->toDateTimeString();
+
+        self::disco()->put(
+            self::ARCHIVO_CORRIDA,
+            json_encode($estado, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    /** Se olvida de la corrida anterior (para no mostrar una barra vieja). */
+    public static function olvidarEstadoDeLaCorrida(): void
+    {
+        if (self::disco()->exists(self::ARCHIVO_CORRIDA)) {
+            self::disco()->delete(self::ARCHIVO_CORRIDA);
+        }
+    }
+
+    /**
+     * La corrida quedó "en curso" y hace rato que no da señales: se interrumpió
+     * (por ejemplo, si se apagó la máquina en el medio).
+     */
+    public static function laCorridaSeInterrumpio(): bool
+    {
+        $estado = self::estadoDeLaCorrida();
+
+        if (($estado['estado'] ?? null) !== 'en_curso') {
+            return false;
+        }
+
+        // La última señal del comando: si hace mucho que no dice nada, el
+        // proceso ya no está.
+        $ultima = $estado['actualizado_en'] ?? $estado['iniciada_en'] ?? null;
+
+        if (! is_string($ultima) || $ultima === '') {
+            return true;
+        }
+
+        try {
+            $minutos = (Helper::now()->getTimestamp() - Carbon::parse($ultima)->getTimestamp()) / 60;
+
+            return $minutos > self::MINUTOS_SIN_SENALES;
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
+    /**
+     * Escribe una línea en el log propio de la corrida.
+     *
+     * Es un archivo de texto aparte de los logs de la aplicación: ahí queda el
+     * paso a paso de cada corrida (los progresos, lo que se saltó, las
+     * observaciones y cómo terminó).
+     */
+    public static function anotarEnLaCorrida(string $linea): void
+    {
+        try {
+            File::append(
+                self::rutaDelLogDeLaCorrida(),
+                '['.Helper::now()->format('Y-m-d H:i:s').'] '.$linea.PHP_EOL
+            );
+        } catch (\Throwable $e) {
+            // Un log que no se puede escribir no puede tumbar la corrida.
+            report($e);
+        }
+    }
+
+    /** La ruta absoluta del log de la corrida. */
+    public static function rutaDelLogDeLaCorrida(): string
+    {
+        // En las pruebas el log va aparte, para no ensuciar el de verdad.
+        return app()->runningUnitTests()
+            ? storage_path('logs/pruebas-planificacion-corrida.log')
+            : storage_path(self::LOG_CORRIDA);
     }
 }

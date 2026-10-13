@@ -94,7 +94,7 @@ http://localhost:8088/planificadordiario-transformaconecta/
 | Documentos | dompdf (PDF) y PhpSpreadsheet (XLSX); MuPDF (`mutool`) + GD para la imagen JPG |
 | Gráficos | GD (PNG en el servidor) y JavaScript propio (línea de tiempo en el navegador) |
 | Tareas programadas | `planificacion:importar` todos los días a las 00:00 |
-| Pruebas | PHPUnit sobre SQLite en memoria: 29 pruebas |
+| Pruebas | PHPUnit sobre SQLite en memoria: 42 pruebas |
 | Licencia | **The Unlicense** (dominio público) — ver [LICENSE](LICENSE) |
 
 ---
@@ -363,7 +363,7 @@ es el mismo):
 
 | Planilla | Qué trae |
 | --- | --- |
-| **Genérica** (`planilla-planificador-diario.xlsx`) | La hoja **DIA**, que se duplica una vez por cada día del período y se renombra con la fecha (`2026-10-04`) |
+| **Genérica** (`planilla-planificador-diario.xlsx`) | La hoja **DIA**, que se duplica una vez por cada día del período y se renombra con la fecha (`2026-10-04`), más la hoja oculta **LISTAS** (las horas de los desplegables) |
 | **De un período** (`planilla-2026-10-01_2026-10-31.xlsx`) | **Una hoja por día del período, ya nombrada con su fecha**, con la fecha puesta y una hoja oculta **LISTAS** con los días del período. No hay que duplicar ni renombrar nada: se llena y se entrega |
 
 La del período se genera con
@@ -381,15 +381,22 @@ que las etiquetas no se muevan, y las celdas de valor quedan escribibles con sus
 | --- | --- |
 | Energía | Lista cerrada: Baja, Media, Alta |
 | Todos los Sí/No | Lista cerrada: Sí, No (objetivos, franjas del horario, checklist y preguntas) |
-| Hora de cada franja | Lista con las horas del horario del sistema (07:00 a 21:00). Admite otra hora escrita a mano —avisa, pero la acepta—, por ejemplo 07:30 |
+| Hora de cada franja | Lista con **todas las horas del día, minuto a minuto: de 00:00 (12:00 a. m.) a 23:59 (11:59 p. m.)**, 1440 opciones, así cada actividad se planifica a la hora y al minuto que sea. Admite otra hora escrita a mano —avisa, pero la acepta—, por ejemplo 07:30. La lista vive en la hoja oculta `LISTAS` (`LISTAS!$B$1:$B$1440`) porque no entra en la fórmula |
 | Duración y resultado del bloque | Listas con los valores del catálogo |
 | Horario | **20 franjas listas** (las 15 del catálogo y 5 de más), cada una con la lista de horas y el Sí/No. Si se inserta una fila dentro del bloque, Excel le arrastra las mismas listas |
 | Fecha (planilla del período) | Lista desplegable con **los días del período**, y la fecha de esa hoja ya puesta |
 | Fecha (planilla genérica) | Celda preparada para escribir una fecha (`dd/mm/aaaa`): **Excel no tiene calendario desplegable en un archivo `.xlsx` normal** (eso existe en Google Sheets, o en Excel solo con macros, en un `.xlsm`). Como el nombre de la hoja es el que manda, esta celda puede quedar vacía |
 
-> Las listas salen de los catálogos de la base: si se cambia un ítem, una pregunta, una duración o
-> el horario base, hay que **regenerar la planilla** (`php artisan planificacion:plantilla`) para
-> que la hoja y el sistema digan lo mismo (ver [§17.5](#175-regenerar-la-planilla-de-planificación)).
+> Las listas salen de los catálogos de la base (energías, objetivos, checklist, preguntas, duraciones
+> y resultados) y de la lista de horas del día. Si se cambia un ítem, una pregunta o una duración,
+> hay que **regenerar la planilla** (`php artisan planificacion:plantilla`) para que la hoja y el
+> sistema digan lo mismo (ver [§17.5](#175-regenerar-la-planilla-de-planificación)).
+
+> El horario **base** del formulario web (las 15 franjas de 07:00 a 21:00 que trae un día nuevo) no
+> cambió: es el punto de partida del diario. Lo que cambió es lo que **acepta la planilla de Excel**,
+> que ahora permite cualquier hora y minuto del día. Y una franja a las 13:45 cargada desde el Excel
+> se conserva al abrir y guardar el día desde el formulario (que usa `input type="time"` y no borra
+> las franjas que no son del catálogo).
 
 **Detalle que se paga una vez:** el atributo `showDropDown` del archivo está invertido (`1` oculta
 la flecha del desplegable). PhpSpreadsheet escribe el valor negado, así que la plantilla lo pide
@@ -405,20 +412,31 @@ de la cola** desde su fila. El módulo **solo guarda**: no procesa nada.
 
 **Todo el módulo trabaja por AJAX.** Montar el libro, quitarlo de la cola (de a uno o en lote) y
 refrescar la lista no recargan la página: el formulario viaja con `FormData`, el servidor contesta
-con el sobre de siempre y el bloque de la cola se vuelve a pedir a `GET /planificacion/cola`, que
-devuelve el mismo HTML que se ve en pantalla (la vista parcial `planificacion/_cola`). Si algo
+con el sobre de siempre y los dos bloques que cambian con el tiempo —la cola y el detalle de la
+última corrida— se vuelven a pedir a `GET /planificacion/estado`, que devuelve el mismo HTML que se
+ve en pantalla (las vistas parciales `planificacion/_cola` y `planificacion/_corrida`). Si algo
 falla, el aviso muestra el error que devolvió el servidor (por ejemplo, si el archivo no es
 `.xlsx`); si sale bien, avisa y la cola se actualiza sola. Sin JavaScript, el formulario sigue
 funcionando: vuelve al módulo con el aviso en la sesión.
 
-**La cola se mantiene al día sola.** Cada 20 segundos el módulo vuelve a pedir la cola (y también
-al volver a la pestaña) y **sólo cambia la pantalla si algo cambió**: el servidor devuelve una
-**huella** del bloque y, si es la misma, no se toca el DOM. El refresco **sólo mira**: no dispara la
-corrida, que sigue siendo a las 00:00 y sólo a esa hora. Al cambiar la tabla se conservan los
-filtros, la página y los libros que estaban seleccionados, y el cartel **En vivo** late como aviso.
+**Volver a montar un libro con el mismo nombre lo reemplaza.** El archivo nuevo ocupa el lugar del
+anterior en la cola y su estado vuelve a **en espera**: se borra el detalle de la corrida anterior
+—incluida cualquier hoja saltada o con avisos— y los contadores arrancan de cero. Es la forma de
+corregir un libro que quedó a medias: se arregla el Excel, se monta otra vez y la corrida siguiente
+lo toma entero (los días que ya estén en la base se omiten como siempre).
 
-**La tabla de la cola es una DataTables** (paginado 5/10/25/50/100, orden por columna, buscador y
-pie de registros) con una **fila de filtros por columna**, igual que el buscador de diarios:
+**El estado se mantiene al día solo.** Cada 20 segundos el módulo vuelve a pedir el estado de los
+dos bloques (y también al volver a la pestaña) y **sólo cambia la pantalla si algo cambió**: el
+servidor devuelve una **huella** de cada bloque y, si es la misma, no se toca el DOM. El refresco
+**sólo mira**: no dispara la corrida, que sigue siendo a las 00:00 y sólo a esa hora. Al cambiar una
+tabla se conservan sus filtros, su página y —en la cola— los libros que estaban seleccionados, y el
+cartel **En vivo** late como aviso.
+
+**Las dos tablas son DataTables** (paginado 5/10/25/50/100, orden por columna, buscador que filtra
+**desde la primera letra** y pie de registros) y cada una tiene su **fila de filtros por columna**,
+igual que el buscador de diarios.
+
+En la **cola de libros**:
 
 | Filtro | Busca en |
 | --- | --- |
@@ -429,6 +447,47 @@ pie de registros) con una **fila de filtros por columna**, igual que el buscador
 | Cubierto hasta | La fecha hasta la que está cubierto sin huecos |
 | Última corrida | La fecha y hora de la última corrida |
 | Qué pasó | El resumen de la última corrida |
+
+En el **detalle de la última corrida**:
+
+| Filtro | Busca en |
+| --- | --- |
+| Palabra clave (el buscador de DataTables) | Hoja, día, acción y motivo |
+| Hoja | El nombre de la hoja del libro |
+| Día | El día que representa esa hoja |
+| Acción | Una de las cinco: creado, ya estaba, saltado, ignorado o con error (lista) |
+| Motivo | Lo que pasó con esa hoja |
+
+**Ejecutar la corrida a mano.** Arriba del detalle está el botón **Ejecutar corrida**, para no
+tener que esperar a las 00:00 cuando quedó algo pendiente (una hoja saltada, un error, o un libro
+recién montado). El aviso de al lado dice qué hay: *"Hay 1 hoja saltada y 1 libro en la cola…"*.
+Si la cola está vacía el botón queda apagado, porque no habría nada que procesar.
+
+> **El botón no tiene lógica propia: invoca el mismo comando del cron**
+> (`planificacion:importar`), tal cual, sin ninguna opción de más. Lo único que hace el módulo es
+> arrancarlo en segundo plano (para poder mostrar el progreso sin colgar el navegador) y leer el
+> estado que el comando va dejando. El nombre del comando está una sola vez, en
+> `ImportarPlanificacion::COMANDO`, y lo usan el cron y el botón: si algún día se renombra, se
+> renombra para los dos. Hay una prueba (`el botón corre el mismo comando que el cron`) que falla si
+> alguien los separa.
+
+Al pulsarlo:
+
+1. Pregunta con **bootbox**: *"¿Desea ejecutar la corrida manual?"* (si se cancela, no pasa nada).
+2. Se abre un **modal de Bootstrap con una barra de progreso** que va marcando el **porcentaje**
+   (0 % → 100 %) y, debajo, qué está haciendo en ese momento (*"Leyendo «planilla…»…"*, *"Hoja
+   2026-10-10 · saltado"*).
+3. Al llegar al 100 % muestra el **resultado**: verde si se completó, amarillo si quedó **con
+   observaciones** (con la lista de lo que se saltó y por qué) o rojo si hubo **errores**, con el
+   resumen de creados, ya estaban, saltados, ignorados y errores.
+4. Al cerrar, el módulo se actualiza solo (la cola y el detalle).
+
+La corrida **arranca en segundo plano**: el comando corre despegado de la petición, así que se
+puede cerrar el modal o incluso el navegador y la corrida sigue. Las reglas son **exactamente las
+mismas** que las de las 00:00 (sólo crea los días que faltan). Mientras corre, el botón no dispara
+otra (el servidor contesta *"Ya hay una corrida en curso"*), y si el proceso se muriera en el
+medio, a los 15 minutos sin señales el módulo la informa como **interrumpida** en vez de dejar la
+barra girando para siempre.
 
 En **cargar el libro** hay un botón **Limpiar** que vacía el campo del archivo (se enciende solo
 cuando hay algo elegido, y se apaga solo después de montar), para no tener que abrir el diálogo del
@@ -446,7 +505,8 @@ storage/app/private/excel/
 ├── procesados/   los libros cuyas fechas ya están todas cargadas
 ├── descartados/  los que se sacaron de la cola a mano
 ├── errores/      los que no se pudieron leer
-└── ejemplos/     un libro de ejemplo para probar (no lo mira la corrida)
+├── ejemplos/     un libro de ejemplo para probar (no lo mira la corrida)
+└── corrida.json  cómo va (o cómo terminó) la última corrida
 ```
 
 **La corrida (`planificacion:importar`).** Todas las noches a las 00:00. Su regla es una sola:
@@ -457,7 +517,7 @@ storage/app/private/excel/
 
 Paso a paso:
 
-1. Lee los nombres de las hojas sin abrir el libro entero.
+1. Lee los nombres de las hojas sin abrir el libro entero (mira el zip del `.xlsx`).
 2. La hoja `INSTRUCCIONES` se ignora; las hojas cuyo nombre no sea una fecha se reportan como
    ignoradas (por eso la hoja DIA avisa sola si alguien olvidó renombrarla).
 3. Consulta en la base qué fechas del libro ya están guardadas: esas se **omiten**.
@@ -469,6 +529,27 @@ Paso a paso:
 6. Deja el reporte en la base y mueve el libro: si todas sus fechas quedaron cargadas pasa a
    `procesados/`; si alguna quedó saltada, se queda en `jobs/` y se reintenta en la corrida
    siguiente; si no se pudo leer, pasa a `errores/`.
+
+**Mientras trabaja va dejando dos rastros**, además de lo que se ve en pantalla:
+
+| Archivo | Qué tiene |
+| --- | --- |
+| `storage/logs/planificacion-corrida.log` | El paso a paso de cada corrida: el porcentaje con lo que está haciendo, cada hoja con su resultado, y al final el **resumen** (creados, ya estaban, saltados, ignorados, errores), el **resultado** (completada, con observaciones o con errores) y **cada observación** con su motivo |
+| `storage/app/private/excel/corrida.json` | Lo mismo en formato de datos: es lo que lee la barra de progreso del módulo (estado, porcentaje, paso actual, resumen y observaciones) |
+
+Ejemplo real del log:
+
+```
+[2026-10-10 16:23:50] Corrida iniciada · 1 libro · 2 hojas
+[2026-10-10 16:23:50] 67% · planilla-semana-1.xlsx · Hoja 2026-10-09 (09/10/2026) · ya estaba
+[2026-10-10 16:23:50] 99% · planilla-semana-1.xlsx · Hoja 2026-10-10 (10/10/2026) · saltado
+[2026-10-10 16:23:50] Libro planilla-semana-1.xlsx · 1 omitido y 1 saltado · estado: Parcial.
+[2026-10-10 16:23:50] Libro planilla-semana-1.xlsx · quedan por cargar: 10/10/2026.
+[2026-10-10 16:23:50] 100% · Corrida terminada
+[2026-10-10 16:23:50] Resumen · creados: 0 · ya estaban: 1 · saltados: 1 · ignorados: 0 · errores: 0 · días creados en esta corrida: 0
+[2026-10-10 16:23:50] Resultado · Corrida completada con observaciones · Se cargó lo que se pudo; quedó algo para revisar (mirá las observaciones).
+[2026-10-10 16:23:50] Observación · Hoja 2026-10-10 (10/10/2026): La fecha de la celda (08/10/2026) no coincide con el nombre de la hoja (10/10/2026).
+```
 
 **Checkpoint.** El módulo muestra hasta dónde está cubierto el período sin huecos, hasta dónde
 hay días cargados por adelantado y cuántos días del período el libro no trae (aviso, no error).
@@ -484,9 +565,10 @@ php artisan planificacion:importar                               # la corrida (e
 php artisan planificacion:importar --archivo=planilla-octubre.xlsx
 ```
 
-`--dry-run` no escribe en la base ni mueve archivos: sirve para revisar un libro antes de
-dejarlo en la cola. El detalle del horario y de su activación está en
-[§13.3](#133-la-corrida-de-las-0000).
+`--dry-run` no escribe en la base, ni mueve archivos, ni toca el progreso ni el log: sirve para
+revisar un libro antes de dejarlo en la cola. No hay ninguna opción más: **el botón del módulo
+corre exactamente este mismo comando**, así que la lógica es una sola. El detalle del horario y de
+su activación está en [§13.3](#133-la-corrida-de-las-0000).
 
 ### 4.9 Catálogos
 
@@ -567,7 +649,9 @@ las 20 de la aplicación y el *health check* `/up` que aporta el framework.
 | GET | `/planificacion` | `planificacion.index` | `PlanificacionController@index` | Módulo de planificación periódica |
 | GET | `/planificacion/plantilla/{archivo?}` | `planificacion.plantilla` | `PlanificacionController@plantilla` | **XLSX** de la planilla (genérica o de un período) |
 | POST | `/planificacion` | `planificacion.store` | `PlanificacionController@store` | Monta un libro en la cola (**JSON 201** si la petición espera JSON; si no, redirige con el aviso) |
-| GET | `/planificacion/cola` | `planificacion.cola` | `PlanificacionController@cola` | **JSON** con el HTML de la cola, su huella y los nombres en cola, para refrescarla sin recargar (**no dispara la corrida**) |
+| POST | `/planificacion/corrida` | `planificacion.corrida.ejecutar` | `PlanificacionController@ejecutarCorrida` | **JSON 202**: arranca la corrida a mano en segundo plano (422 si la cola está vacía, 409 si ya hay una en curso) |
+| GET | `/planificacion/corrida` | `planificacion.corrida` | `PlanificacionController@corrida` | **JSON** con cómo va la corrida (estado, porcentaje, paso, resumen y observaciones) |
+| GET | `/planificacion/estado` | `planificacion.estado` | `PlanificacionController@estado` | **JSON** con la cola y el detalle de la última corrida (HTML y huella de cada uno), para refrescarlos sin recargar. **No dispara la corrida** |
 | DELETE | `/planificacion/cola/lote` | `planificacion.descartar.varios` | `PlanificacionController@descartarVarios` | **JSON**: saca de la cola los libros elegidos |
 | DELETE | `/planificacion/{archivo}` | `planificacion.descartar` | `PlanificacionController@descartar` | Saca un libro de la cola (**JSON** si la petición espera JSON) |
 | GET | `/up` | — | Laravel (health check) | 200 si la aplicación responde |
@@ -666,6 +750,10 @@ Montarla en /planificacion  ──►  queda «en espera» (no se procesa nada t
         │
         ▼
 Revisar el reporte en el módulo (y los días en Consultar diario)
+        │
+        ▼
+Descargar el diario del día (PDF o imagen) y enviarlo al grupo de Telegram de la
+cohorte correspondiente de Transforma-Conecta, al canal de esa actividad
 ```
 
 ---
@@ -1132,7 +1220,7 @@ planificadordiario-transformaconecta/
 │   └── logs/                                     laravel-AAAA-MM-DD.log · errores-AAAA-MM-DD.log
 │
 ├── tests/
-│   ├── Feature/PlanificacionPeriodicaTest.php    27 pruebas del módulo y la corrida
+│   ├── Feature/PlanificacionPeriodicaTest.php    40 pruebas del módulo y la corrida
 │   ├── Feature/ExampleTest.php · Unit/ExampleTest.php
 │   └── TestCase.php
 │
@@ -1310,8 +1398,13 @@ schtasks /delete /tn "PlanificadorDiario-PlanificacionPeriodica" /f
 ```
 
 > Con `schtasks /run` el comando se ejecuta en el momento (útil para no esperar a la medianoche).
-> El resultado de cada corrida, además, queda en `storage/logs/planificacion-periodica.log` y en
-> el reporte del módulo.
+> El resultado de cada corrida, además, queda en `storage/logs/planificacion-periodica.log` (lo que
+> el comando imprime en pantalla) y en el reporte del módulo.
+>
+> Desde el módulo también se puede correr a mano con el botón **Ejecutar corrida** (ver
+> [§4.8](#48-planificación-periódica)): arranca este mismo comando en segundo plano y sigue el
+> progreso. Lo que hace paso a paso queda en su log propio,
+> `storage/logs/planificacion-corrida.log`.
 
 **Linux o hosting con cron.** Manda el horario de `routes/console.php`, así que basta con dejar
 el planificador de Laravel corriendo cada minuto:
@@ -1357,7 +1450,7 @@ el planificador de Laravel corriendo cada minuto:
 | `GET /error/404` | 404 con la página de errores del sistema |
 | `GET /.env` y `GET /storage/...` | **403** (bloqueados por el `.htaccess` de la raíz) |
 | `php artisan planificacion:importar --dry-run` | El plan de la corrida, sin escribir nada |
-| `php artisan test` | 29 pruebas correctas |
+| `php artisan test` | 42 pruebas correctas |
 
 ---
 
@@ -1582,10 +1675,12 @@ planillas que ya se repartieron siguen funcionando mientras sus etiquetas exista
 | Qué | Cómo |
 | --- | --- |
 | Ver el plan sin ejecutar | `php artisan planificacion:importar --dry-run` |
-| Ejecutar ahora | `schtasks /run /tn "PlanificadorDiario-PlanificacionPeriodica"` o `php artisan planificacion:importar` |
-| Ver la bitácora de las corridas | `Get-Content storage\logs\planificacion-periodica.log -Tail 30` |
+| Ejecutar ahora | El botón **Ejecutar corrida** del módulo: arranca el mismo comando del cron, en segundo plano, y muestra el progreso |
+| Ejecutar desde la consola | `schtasks /run /tn "PlanificadorDiario-PlanificacionPeriodica"` o `php artisan planificacion:importar` |
+| Seguir una corrida en curso | `Get-Content storage\logs\planificacion-corrida.log -Tail 30 -Wait` |
+| Ver la bitácora de las corridas | `Get-Content storage\logs\planificacion-periodica.log -Tail 30` (lo que imprimió el comando) |
 | Ver el reporte hoja por hoja | El módulo **Planificación periódica** |
-| Reintentar un libro | Se queda solo en `jobs/` mientras tenga hojas saltadas; corregir el Excel y volver a montarlo |
+| Reintentar un libro | Se queda solo en `jobs/` mientras tenga hojas saltadas; corregir el Excel, volver a montarlo y correr |
 | Sacar un libro de la cola | **Quitar de la cola** en el módulo (pasa a `descartados/`) |
 | Volver a cargar un día corregido | No lo hace la corrida (nunca pisa): se edita desde *Consultar diario*. Si el día se elimina, la corrida siguiente lo vuelve a crear desde el Excel |
 
@@ -1651,6 +1746,7 @@ librería.
 | `storage/logs/errores-AAAA-MM-DD.log` | El detalle de cada error, con su código de incidente. **El primero que conviene abrir** |
 | `storage/logs/laravel-AAAA-MM-DD.log` | Log general de Laravel |
 | `storage/logs/planificacion-periodica.log` | Lo que imprimió cada corrida del cron |
+| `storage/logs/planificacion-corrida.log` | El paso a paso de cada corrida (el progreso, lo que se saltó, las observaciones y el resumen final) |
 
 - Para encontrar un incidente, buscar el **código que muestra la página de error** en
   `errores-*.log`.
@@ -1664,13 +1760,13 @@ librería.
 
 ### 18.1 Qué hay
 
-`php artisan test` corre **29 pruebas (244 aserciones)**, todas correctas:
+`php artisan test` corre **42 pruebas (353 aserciones)**, todas correctas:
 
 | Archivo | Qué cubre |
 | --- | --- |
 | `tests/Unit/ExampleTest.php` | Prueba unitaria de ejemplo |
 | `tests/Feature/ExampleTest.php` | La portada responde 200 |
-| `tests/Feature/PlanificacionPeriodicaTest.php` | **27 pruebas**: la planilla (hojas, etiquetas, protección, celdas escribibles, listas desplegables con su flecha y la planilla de un período con una hoja por día), la corrida (crea solo lo que falta, **lee los campos que se eligen de una lista**, **lee los valores nativos de Excel**, no pisa un día cargado, vuelve a crear un día eliminado, salta la hoja sin cierre, ignora `INSTRUCCIONES` y `LISTAS`), el modo `--dry-run` (no escribe nada) y el módulo (abrir, descargar la planilla genérica y la de un período, montar, reemplazar y quitar de la cola) |
+| `tests/Feature/PlanificacionPeriodicaTest.php` | **40 pruebas**: la planilla (hojas, etiquetas, protección, celdas escribibles, listas desplegables con su flecha y la planilla de un período con una hoja por día), la corrida (crea solo lo que falta, **lee los campos que se eligen de una lista**, **lee los valores nativos de Excel**, no pisa un día cargado, vuelve a crear un día eliminado, salta la hoja sin cierre, ignora `INSTRUCCIONES` y `LISTAS`), el modo `--dry-run` (no escribe nada) y el módulo (abrir, descargar la planilla genérica y la de un período, montar por AJAX, **volver a montar el mismo nombre y comprobar que reemplaza el libro, el estado y los contadores**, quitar de la cola de a uno y en lote, **pedir la cola y el detalle de la última corrida por AJAX con sus huellas**, dibujar una fila ya corrida y el acceso desde el inicio) |
 
 ### 18.2 Cómo corren
 
@@ -1859,7 +1955,7 @@ reutilizan:
 | Ruta nueva | `GET /diario/{id}/imagen` y el modal de *Documentos del día* (PDF o imagen, con marca de agua opcional) |
 | Formato de la hoja | Se agregó el detalle de los tres objetivos, el checklist, las franjas y el cierre al PDF, al Excel y a la imagen |
 
-**3. Pruebas automatizadas.** Se pasó de "solo los ejemplos del esqueleto" a **29 pruebas (244
+**3. Pruebas automatizadas.** Se pasó de "solo los ejemplos del esqueleto" a **42 pruebas (353
 aserciones)**, todas correctas: `tests/Feature/PlanificacionPeriodicaTest.php` (17) cubre la
 planilla, la corrida, el modo de revisión y el módulo; se corrigieron `phpunit.xml` (`APP_URL`) y
 la prueba de la portada (`RefreshDatabase`), que fallaba desde el esqueleto.
@@ -1891,7 +1987,7 @@ dependencias de PHP. Lo que ya estaba cargado sigue igual.
   modo de revisión sin escritura.
 - Catálogos sembrados y ampliables; publicación en la raíz del proyecto con bloqueos de seguridad.
 - Página de errores propia y bitácora detallada.
-- 29 pruebas automatizadas.
+- 42 pruebas automatizadas.
 
 ### 21.6 Deuda técnica conocida (impacto bajo)
 

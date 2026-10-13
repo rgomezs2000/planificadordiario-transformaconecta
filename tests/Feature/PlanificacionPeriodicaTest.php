@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\ImportarPlanificacion;
 use App\Excel\PlantillaDelPlanificador;
 use App\Helpers\Helper;
 use App\Models\DailyPlan;
@@ -13,8 +14,11 @@ use App\Models\ReflectionAnswer;
 use App\Models\ScheduleEntry;
 use App\Planificacion\ArchivosDePlanificacion;
 use App\Planificacion\ImportadorDePlanificacion;
+use App\Planificacion\LanzadorDeCorridas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -22,6 +26,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as FechaExcel;
 use PhpOffice\PhpSpreadsheet\Style\Protection;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\Process\PhpExecutableFinder;
 use Tests\TestCase;
 
 /**
@@ -56,8 +61,18 @@ class PlanificacionPeriodicaTest extends TestCase
         $libro = IOFactory::load(ArchivosDePlanificacion::rutaAbsoluta(ArchivosDePlanificacion::rutaPlantilla()));
 
         $this->assertSame(
-            [PlantillaDelPlanificador::HOJA_DIA, PlantillaDelPlanificador::HOJA_INSTRUCCIONES],
+            [
+                PlantillaDelPlanificador::HOJA_DIA,
+                PlantillaDelPlanificador::HOJA_LISTAS,
+                PlantillaDelPlanificador::HOJA_INSTRUCCIONES,
+            ],
             $libro->getSheetNames()
+        );
+
+        // Las listas van ocultas y las instrucciones, siempre al final.
+        $this->assertSame(
+            Worksheet::SHEETSTATE_HIDDEN,
+            $libro->getSheetByName(PlantillaDelPlanificador::HOJA_LISTAS)->getSheetState()
         );
 
         $dia = $libro->getSheetByName(PlantillaDelPlanificador::HOJA_DIA);
@@ -124,8 +139,8 @@ class PlanificacionPeriodicaTest extends TestCase
         $horas = $dia->getDataValidation('B'.$primera);
         $this->assertSame(DataValidation::TYPE_LIST, $horas->getType());
         $this->assertSame(DataValidation::STYLE_WARNING, $horas->getErrorStyle());
-        $this->assertStringContainsString('07:00', $horas->getFormula1());
-        $this->assertStringContainsString('21:00', $horas->getFormula1());
+        // Las horas salen de la lista oculta: todo el día, minuto a minuto.
+        $this->assertSame('LISTAS!$B$1:$B$'.PlantillaDelPlanificador::HORAS_DEL_DIA, $horas->getFormula1());
         $this->assertSame('"Sí,No"', $dia->getDataValidation('D'.$primera)->getFormula1());
 
         $this->assertTrue($dia->dataValidationExists('B'.$ultima));
@@ -137,6 +152,65 @@ class PlanificacionPeriodicaTest extends TestCase
         // desplegable y la celda parece un campo común.
         $this->assertTrue($energia->getShowDropDown());
         $this->assertTrue($horas->getShowDropDown());
+    }
+
+    /**
+     * El desplegable de la Hora cubre el día completo, minuto a minuto: de 00:00
+     * a 23:59 (1440 opciones), y el lector las entiende.
+     */
+    public function test_las_horas_de_la_lista_cubren_todo_el_dia(): void
+    {
+        $horas = PlantillaDelPlanificador::horasDelDia();
+
+        $this->assertCount(PlantillaDelPlanificador::HORAS_DEL_DIA, $horas);
+        $this->assertCount(1440, array_unique($horas));
+        $this->assertSame(PlantillaDelPlanificador::PRIMERA_HORA, $horas[0]);
+        $this->assertSame('00:01', $horas[1]);
+        $this->assertSame('12:00', $horas[12 * 60]);
+        $this->assertSame(PlantillaDelPlanificador::ULTIMA_HORA, $horas[array_key_last($horas)]);
+
+        // Y están en la hoja oculta, completas.
+        $libro = PlantillaDelPlanificador::generar();
+        $listas = $libro->getSheetByName(PlantillaDelPlanificador::HOJA_LISTAS);
+
+        $this->assertSame('00:00', $listas->getCell('B1')->getValue());
+        $this->assertSame('12:00', $listas->getCell('B'.(12 * 60 + 1))->getValue());
+        $this->assertSame('23:59', $listas->getCell('B'.PlantillaDelPlanificador::HORAS_DEL_DIA)->getValue());
+        $this->assertNull($listas->getCell('B'.(PlantillaDelPlanificador::HORAS_DEL_DIA + 1))->getValue());
+
+        // Lo que se elija de esa lista lo entiende la corrida.
+        foreach (['00:00', '07:30', '13:45', '23:59'] as $hora) {
+            $this->assertSame($hora, Helper::timeFromSpreadsheet($hora));
+        }
+    }
+
+    /** Las instrucciones explican el envío del diario y las horas de la lista. */
+    public function test_las_instrucciones_traen_el_envio_del_diario_y_las_horas(): void
+    {
+        $libro = PlantillaDelPlanificador::generar();
+        $hoja = $libro->getSheetByName(PlantillaDelPlanificador::HOJA_INSTRUCCIONES);
+
+        $textos = [];
+
+        for ($fila = 1; $fila <= $hoja->getHighestRow(); $fila++) {
+            $textos[] = (string) $hoja->getCell('B'.$fila)->getValue();
+        }
+
+        $todo = implode("\n", $textos);
+
+        $this->assertStringContainsString('CÓMO SE ENTREGA', $todo);
+        $this->assertStringContainsString(
+            'enviar el mismo al grupo de Telegram de la cohorte correspondiente de Transforma-Conecta',
+            $todo
+        );
+        $this->assertStringContainsString('canal correspondiente para tal actividad', $todo);
+        $this->assertStringContainsString('al o a los día(s) que le(s) corresponda(n)', $todo);
+        $this->assertStringContainsString('de 00:00 (12:00 a. m.) a 23:59 (11:59 p. m.), minuto a minuto', $todo);
+
+        // Y las instrucciones siguen siendo la última hoja del libro.
+        $nombres = $libro->getSheetNames();
+
+        $this->assertSame(PlantillaDelPlanificador::HOJA_INSTRUCCIONES, $nombres[array_key_last($nombres)]);
     }
 
     /**
@@ -685,36 +759,36 @@ class PlanificacionPeriodicaTest extends TestCase
     public function test_la_cola_se_puede_pedir_por_ajax(): void
     {
         // Sin libros: el bloque trae el aviso de que no hay nada montado.
-        $vacia = $this->get(route('planificacion.cola', absolute: false), ['Accept' => 'application/json']);
+        $vacia = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
 
         $vacia->assertOk()
             ->assertJsonPath('ok', true)
-            ->assertJsonPath('data.en_cola', 0);
+            ->assertJsonPath('data.cola.en_cola', 0);
 
-        $this->assertStringContainsString('Todavía no hay ningún libro montado', (string) $vacia->json('data.html'));
+        $this->assertStringContainsString('Todavía no hay ningún libro montado', (string) $vacia->json('data.cola.html'));
 
         // Con un libro: el bloque trae la tabla, las casillas y el nombre.
         $this->montarLibro('planilla octubre.xlsx');
 
-        $conLibro = $this->get(route('planificacion.cola', absolute: false), ['Accept' => 'application/json']);
+        $conLibro = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
 
         $conLibro->assertOk()
-            ->assertJsonPath('data.en_cola', 1)
-            ->assertJsonPath('data.enCola', 1)
-            ->assertJsonPath('data.archivos', ['planilla-octubre.xlsx']);
+            ->assertJsonPath('data.cola.en_cola', 1)
+            ->assertJsonPath('data.cola.enCola', 1)
+            ->assertJsonPath('data.cola.archivos', ['planilla-octubre.xlsx']);
 
         // La huella sirve para no tocar la pantalla cuando nada cambió.
-        $this->assertNotEmpty($conLibro->json('data.huella'));
+        $this->assertNotEmpty($conLibro->json('data.cola.huella'));
         $this->assertSame(
-            md5((string) $conLibro->json('data.html')),
-            $conLibro->json('data.huella')
+            md5((string) $conLibro->json('data.cola.html')),
+            $conLibro->json('data.cola.huella')
         );
 
-        $html = (string) $conLibro->json('data.html');
+        $html = (string) $conLibro->json('data.cola.html');
 
         foreach ([
             'tf-cola__check', 'cola-eliminar', 'cola-todos', 'tf-cola__quitar',
-            'planilla-octubre.xlsx', 'id="tabla-cola"', 'data-cola-filtro', 'cola-latido',
+            'planilla-octubre.xlsx', 'id="tabla-cola"', 'data-filtro', 'cola-latido',
         ] as $marca) {
             $this->assertStringContainsString($marca, $html);
         }
@@ -722,10 +796,122 @@ class PlanificacionPeriodicaTest extends TestCase
         // La huella cambia cuando cambia la cola.
         $this->montarLibro('planilla noviembre.xlsx');
 
-        $otra = $this->get(route('planificacion.cola', absolute: false), ['Accept' => 'application/json']);
+        $otra = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
 
-        $otra->assertOk()->assertJsonPath('data.en_cola', 2);
-        $this->assertNotSame($conLibro->json('data.huella'), $otra->json('data.huella'));
+        $otra->assertOk()->assertJsonPath('data.cola.en_cola', 2);
+        $this->assertNotSame($conLibro->json('data.cola.huella'), $otra->json('data.cola.huella'));
+    }
+
+    /**
+     * El detalle de la última corrida viaja en el mismo estado, con su tabla de
+     * DataTables, sus filtros y su huella.
+     */
+    public function test_el_detalle_de_la_corrida_se_puede_pedir_por_ajax(): void
+    {
+        // Antes de correr, el bloque avisa que todavía no corrió.
+        $antes = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $antes->assertOk();
+        $this->assertStringContainsString(
+            'Todavía no corrió ninguna vez',
+            (string) $antes->json('data.corrida.html')
+        );
+
+        // Se monta un libro y se corre.
+        $this->post(route('planificacion.store', absolute: false), [
+            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+        ])->assertSessionHas('exito');
+
+        $this->artisan('planificacion:importar')->assertSuccessful();
+
+        $despues = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $despues->assertOk();
+
+        // La huella es la del HTML: así el módulo no toca la pantalla de gusto.
+        $this->assertSame(
+            md5((string) $despues->json('data.corrida.html')),
+            $despues->json('data.corrida.huella')
+        );
+
+        $html = (string) $despues->json('data.corrida.html');
+
+        foreach ([
+            'id="tabla-corrida"',   // la tabla que maneja DataTables
+            'data-filtro',          // los filtros por columna
+            'Todas las acciones',   // el filtro de acción
+            'Saltado',              // una acción en la tabla
+            'semana-1.xlsx',        // el libro de la corrida
+        ] as $marca) {
+            $this->assertStringContainsString($marca, $html);
+        }
+
+        // Y la huella es otra cuando el contenido es otro.
+        $this->assertNotSame($antes->json('data.corrida.huella'), $despues->json('data.corrida.huella'));
+    }
+
+    /**
+     * Volver a montar un libro que ya está en la cola reemplaza el archivo y su
+     * estado: vuelve a "en espera" y se borra la observación de la corrida
+     * anterior (por ejemplo, una hoja saltada).
+     */
+    public function test_volver_a_montar_el_mismo_libro_lo_reemplaza(): void
+    {
+        // 1) Un libro montado y una corrida encima: queda parcial, con su detalle.
+        $this->post(route('planificacion.store', absolute: false), [
+            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+        ])->assertSessionHas('exito');
+
+        $this->artisan('planificacion:importar')->assertSuccessful();
+
+        $registro = PlanificacionImportacion::where('archivo', 'semana-1.xlsx')->first();
+
+        $this->assertNotNull($registro);
+        $this->assertSame(PlanificacionImportacion::PARCIAL, $registro->estado);
+        $this->assertGreaterThan(0, $registro->hojas_saltadas);
+        $this->assertGreaterThan(0, $registro->hojas()->count());
+        $this->assertNotNull($registro->procesado_en);
+
+        // 2) Se vuelve a montar con el mismo nombre: se reemplaza.
+        $respuesta = $this->post(
+            route('planificacion.store', absolute: false),
+            ['archivo' => $this->archivoDePrueba('semana 1.xlsx')],
+            ['Accept' => 'application/json']
+        );
+
+        $respuesta->assertStatus(201)->assertJsonPath('ok', true);
+        $this->assertStringContainsString('se volvió a montar', (string) $respuesta->json('message'));
+
+        $registro = $registro->fresh();
+
+        $this->assertSame(PlanificacionImportacion::EN_ESPERA, $registro->estado);
+        $this->assertNull($registro->procesado_en);
+        $this->assertSame(0, $registro->hojas_saltadas);
+        $this->assertSame(0, $registro->hojas()->count());
+        $this->assertSame(1, PlanificacionImportacion::count());
+
+        // El archivo de la cola es el nuevo: la planilla genérica trae DIA, no días.
+        $libro = IOFactory::load(ArchivosDePlanificacion::rutaAbsoluta(
+            ArchivosDePlanificacion::rutaEnCola('semana-1.xlsx')
+        ));
+
+        $this->assertSame(
+            [
+                PlantillaDelPlanificador::HOJA_DIA,
+                PlantillaDelPlanificador::HOJA_LISTAS,
+                PlantillaDelPlanificador::HOJA_INSTRUCCIONES,
+            ],
+            $libro->getSheetNames()
+        );
+
+        // Y la observación anterior ya no aparece en el detalle: no hay corrida
+        // nueva que mostrar.
+        $estado = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $this->assertStringContainsString(
+            'Todavía no corrió ninguna vez',
+            (string) $estado->json('data.corrida.html')
+        );
     }
 
     /** Quitar un libro con el botón de su fila también es AJAX. */
@@ -775,12 +961,12 @@ class PlanificacionPeriodicaTest extends TestCase
             ->assertSee('libro-de-ejemplo.xlsx');
 
         // Y el bloque que refresca el AJAX también, con la fecha en palabras.
-        $cola = $this->get(route('planificacion.cola', absolute: false), ['Accept' => 'application/json']);
+        $cola = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
         $cola->assertOk();
 
         $this->assertStringContainsString(
             Helper::dateTime($registro->procesado_en),
-            (string) $cola->json('data.html')
+            (string) $cola->json('data.cola.html')
         );
 
         // Un libro descartado también se dibuja (la otra rama de la fecha).
@@ -804,8 +990,225 @@ class PlanificacionPeriodicaTest extends TestCase
     }
 
     /* ======================================================================
+     |  La corrida a mano
+     ====================================================================== */
+
+    /** Sin libros en la cola no hay nada que correr: avisa y no arranca nada. */
+    public function test_la_corrida_a_mano_avisa_si_no_hay_libros(): void
+    {
+        $respuesta = $this->postJson(route('planificacion.corrida.ejecutar', absolute: false));
+
+        $respuesta->assertStatus(422)->assertJsonPath('ok', false);
+        $this->assertStringContainsString('No hay ningún libro en la cola', (string) $respuesta->json('message'));
+    }
+
+    /** El botón arranca la corrida: contesta en el acto y deja el progreso. */
+    public function test_el_modulo_arranca_la_corrida_a_mano(): void
+    {
+        $this->montarLibro('planilla octubre.xlsx');
+
+        $lanzador = $this->lanzadorDeMentira();
+
+        $respuesta = $this->postJson(route('planificacion.corrida.ejecutar', absolute: false));
+
+        $respuesta->assertStatus(202)
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('data.comando', $lanzador->comando());
+
+        $this->assertTrue($lanzador->lanzado);
+
+        // El progreso queda arrancado y el módulo ya lo puede leer.
+        $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+        $this->assertSame('en_curso', $estado['estado']);
+        $this->assertSame(0, $estado['porcentaje']);
+        $this->assertSame(1, $estado['libros']);
+
+        $this->getJson(route('planificacion.corrida', absolute: false))
+            ->assertOk()
+            ->assertJsonPath('data.estado', 'en_curso');
+    }
+
+    /** Si ya hay una corrida en curso no se arranca otra. */
+    public function test_la_corrida_a_mano_no_se_pisa_a_si_misma(): void
+    {
+        $this->montarLibro('planilla octubre.xlsx');
+        $this->lanzadorDeMentira();
+
+        $this->postJson(route('planificacion.corrida.ejecutar', absolute: false))->assertStatus(202);
+
+        $this->postJson(route('planificacion.corrida.ejecutar', absolute: false))
+            ->assertStatus(409)
+            ->assertJsonPath('ok', false);
+    }
+
+    /** Una corrida que quedó colgada se informa como interrumpida, no en curso. */
+    public function test_una_corrida_colgada_se_informa_interrumpida(): void
+    {
+        ArchivosDePlanificacion::guardarEstadoDeLaCorrida([
+            'estado' => 'en_curso',
+            'iniciada_en' => Helper::now()->subHours(5)->toDateTimeString(),
+            // Hace 5 horas que el comando no da señales: el proceso ya no está.
+            'actualizado_en' => Helper::now()->subHours(5)->toDateTimeString(),
+            'porcentaje' => 40,
+            'paso' => 'Leyendo…',
+        ]);
+
+        $this->getJson(route('planificacion.corrida', absolute: false))
+            ->assertOk()
+            ->assertJsonPath('data.estado', 'interrumpida')
+            ->assertJsonPath('data.resultado', 'con_errores');
+
+        // Y deja arrancar una corrida nueva.
+        $this->montarLibro('planilla octubre.xlsx');
+        $this->lanzadorDeMentira();
+
+        $this->postJson(route('planificacion.corrida.ejecutar', absolute: false))->assertStatus(202);
+    }
+
+    /** Sin ninguna corrida anterior, el estado lo dice. */
+    public function test_la_corrida_sin_estado_avisa_que_no_corrio(): void
+    {
+        $this->getJson(route('planificacion.corrida', absolute: false))
+            ->assertOk()
+            ->assertJsonPath('data.estado', 'sin_corrida')
+            ->assertJsonPath('data.porcentaje', 0);
+    }
+
+    /**
+     * La corrida de verdad deja el progreso, el resumen y las observaciones: es
+     * lo que muestra la barra y lo que queda en su log.
+     */
+    public function test_la_corrida_deja_el_progreso_y_su_log(): void
+    {
+        $this->post(route('planificacion.store', absolute: false), [
+            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+        ])->assertSessionHas('exito');
+
+        $this->artisan(ImportarPlanificacion::COMANDO)->assertSuccessful();
+
+        $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+        $this->assertSame('terminada', $estado['estado']);
+        $this->assertSame(100, $estado['porcentaje']);
+        $this->assertNotNull($estado['iniciada_en']);
+        $this->assertNotNull($estado['terminada_en']);
+
+        // El libro de ejemplo trae una hoja sin cierre: queda como observación.
+        $this->assertSame('con_observaciones', $estado['resultado']);
+        $this->assertSame('Corrida completada con observaciones', $estado['resultado_en_palabras']);
+        $this->assertSame(1, $estado['resumen']['saltados']);
+        $this->assertNotEmpty($estado['observaciones']);
+        $this->assertStringContainsString('2026-10-10', implode(' ', $estado['observaciones']));
+
+        // Y todo el paso a paso queda en el log de la corrida.
+        $log = File::get(ArchivosDePlanificacion::rutaDelLogDeLaCorrida());
+
+        foreach ([
+            'Corrida iniciada',
+            '100% · Corrida terminada',
+            'Resumen ·',
+            'Resultado · Corrida completada con observaciones',
+            'Observación · Hoja 2026-10-10',
+        ] as $marca) {
+            $this->assertStringContainsString($marca, $log);
+        }
+    }
+
+    /** La corrida del cron también deja su rastro. */
+    public function test_la_corrida_del_cron_tambien_deja_su_log(): void
+    {
+        $this->post(route('planificacion.store', absolute: false), [
+            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+        ]);
+
+        $this->artisan(ImportarPlanificacion::COMANDO)->assertSuccessful();
+
+        $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+        $this->assertSame('terminada', $estado['estado']);
+
+        $this->assertStringContainsString(
+            'Corrida iniciada',
+            File::get(ArchivosDePlanificacion::rutaDelLogDeLaCorrida())
+        );
+    }
+
+    /** La vista del módulo trae el botón, la confirmación y la barra de progreso. */
+    public function test_el_modulo_trae_el_boton_y_la_barra_de_la_corrida(): void
+    {
+        $this->montarLibro('planilla octubre.xlsx');
+
+        $respuesta = $this->get(route('planificacion.index', absolute: false));
+
+        $respuesta->assertOk();
+
+        foreach ([
+            'id="corrida-ejecutar"',
+            'Ejecutar corrida',
+            'id="modalCorrida"',
+            'id="corrida-barra"',
+            'id="corrida-barra-relleno"',
+            'id="corrida-paso"',
+            'id="corrida-resultado"',
+            '¿Desea ejecutar la corrida manual?',
+            'la corrida sigue sola',
+        ] as $marca) {
+            $respuesta->assertSee($marca, false);
+        }
+    }
+
+    /**
+     * El botón tiene que invocar el mismo comando que el cron: ni una versión
+     * aparte, ni opciones de más. Esta prueba es el candado de eso.
+     */
+    public function test_el_boton_corre_el_mismo_comando_que_el_cron(): void
+    {
+        $linea = (new LanzadorDeCorridas)->comando();
+
+        // Es el mismo comando, sin ninguna opción.
+        $this->assertStringEndsWith('"'.base_path('artisan').'" '.ImportarPlanificacion::COMANDO, $linea);
+        $this->assertStringNotContainsString('--', $linea);
+
+        // Y ese nombre es el que está programado en el horario del cron.
+        $this->assertStringContainsString(
+            'Schedule::command(ImportarPlanificacion::COMANDO)',
+            File::get(base_path('routes/console.php'))
+        );
+
+        // El comando existe con ese nombre exacto (el mismo que corre a mano).
+        $this->assertArrayHasKey(ImportarPlanificacion::COMANDO, Artisan::all());
+        $this->assertSame(
+            '"'.(new PhpExecutableFinder)->find(false).'" "'.base_path('artisan').'" '.ImportarPlanificacion::COMANDO,
+            $linea
+        );
+    }
+
+    /* ======================================================================
      |  Ayudas
      ====================================================================== */
+
+    /**
+     * Un lanzador de mentira: en las pruebas no se arranca ningún proceso de
+     * verdad. Si se arrancara, el comando correría contra la base real y
+     * procesaría la cola de verdad.
+     */
+    private function lanzadorDeMentira(): LanzadorDeCorridas
+    {
+        $lanzador = new class extends LanzadorDeCorridas
+        {
+            public bool $lanzado = false;
+
+            public function lanzar(): void
+            {
+                $this->lanzado = true;
+            }
+        };
+
+        $this->app->instance(LanzadorDeCorridas::class, $lanzador);
+
+        return $lanzador;
+    }
 
     /** Monta un libro en la cola como si se hubiera subido desde el módulo. */
     private function montarLibro(string $nombre): string

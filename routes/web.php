@@ -89,8 +89,14 @@ Route::prefix('planificacion')->name('planificacion.')->group(function () {
     // Montar un libro en la cola
     Route::post('/', [PlanificacionController::class, 'store'])->name('store');
 
-    // La cola sola, para que el módulo la refresque por AJAX sin recargar
-    Route::get('/cola', [PlanificacionController::class, 'cola'])->name('cola');
+    // El estado del módulo (la cola y el detalle de la última corrida), para que
+    // se actualice solo por AJAX sin recargar. No dispara ninguna corrida.
+    Route::get('/estado', [PlanificacionController::class, 'estado'])->name('estado');
+
+    // La corrida a mano: el boton del modulo la arranca (POST) y sigue el
+    // progreso (GET). Lanza el mismo comando que el cron, en segundo plano.
+    Route::post('/corrida', [PlanificacionController::class, 'ejecutarCorrida'])->name('corrida.ejecutar');
+    Route::get('/corrida', [PlanificacionController::class, 'corrida'])->name('corrida');
 
     // Sacar varios libros de la cola de una sola vez (lo llama el AJAX del
     // módulo). Va con dos segmentos para no confundirse con /{archivo}.

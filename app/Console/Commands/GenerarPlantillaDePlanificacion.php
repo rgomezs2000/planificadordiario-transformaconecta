@@ -65,8 +65,11 @@ class GenerarPlantillaDePlanificacion extends Command
         $this->info('Planilla creada: '.$ruta);
         $this->line('  archivo: '.ArchivosDePlanificacion::rutaAbsoluta($ruta));
         $this->line('  peso:    '.Helper::fileSize((int) filesize(ArchivosDePlanificacion::rutaAbsoluta($ruta))));
-        $this->line('  hojas:   '.PlantillaDelPlanificador::HOJA_DIA.' (para duplicar) y '
-            .PlantillaDelPlanificador::HOJA_INSTRUCCIONES.' (al final, la corrida la ignora)');
+        $this->line('  hojas:   '.PlantillaDelPlanificador::HOJA_DIA.' (para duplicar), la hoja oculta '
+            .PlantillaDelPlanificador::HOJA_LISTAS.' y '.PlantillaDelPlanificador::HOJA_INSTRUCCIONES
+            .' (al final, la corrida la ignora)');
+        $this->line('  horas:   '.PlantillaDelPlanificador::HORAS_DEL_DIA.' en el desplegable de cada franja ('
+            .PlantillaDelPlanificador::PRIMERA_HORA.' a '.PlantillaDelPlanificador::ULTIMA_HORA.')');
 
         if (! $this->option('ejemplo')) {
             return self::SUCCESS;

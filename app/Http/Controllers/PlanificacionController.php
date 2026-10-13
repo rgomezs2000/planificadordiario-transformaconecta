@@ -7,6 +7,7 @@ use App\Errores\RegistroDeErrores;
 use App\Helpers\Helper;
 use App\Models\PlanificacionImportacion;
 use App\Planificacion\ArchivosDePlanificacion;
+use App\Planificacion\LanzadorDeCorridas;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,15 +32,14 @@ class PlanificacionController extends Controller
     public function index(): View
     {
         try {
-            $ultima = PlanificacionImportacion::ultimaCorrida();
             $cola = $this->htmlDeLaCola();
+            $corrida = $this->htmlDeLaCorrida();
 
-            return view('planificacion.index', array_merge($cola['datos'], [
+            return view('planificacion.index', array_merge($cola['datos'], $corrida['datos'], [
                 'huellaCola' => $cola['huella'],
+                'huellaCorrida' => $corrida['huella'],
                 'planilla' => ArchivosDePlanificacion::datosDeLaPlantilla(),
                 'plantillas' => ArchivosDePlanificacion::plantillas(),
-                'ultima' => $ultima,
-                'hojasDeLaUltima' => $ultima?->hojas ?? collect(),
                 'horaDeLaCorrida' => ImportarPlanificacion::HORA,
                 'pesoMaximo' => Helper::fileSize(ArchivosDePlanificacion::PESO_MAXIMO * 1024),
             ]));
@@ -48,6 +48,7 @@ class PlanificacionController extends Controller
 
             return view('planificacion.index', array_merge($this->datosDeLaCola(), [
                 'huellaCola' => null,
+                'huellaCorrida' => null,
                 'planilla' => ['existe' => false, 'nombre' => ArchivosDePlanificacion::PLANTILLA, 'peso' => null, 'modificado' => null],
                 'plantillas' => [],
                 'ultima' => null,
@@ -75,6 +76,31 @@ class PlanificacionController extends Controller
     }
 
     /**
+     * El detalle de la última corrida, ya armado: los datos, su HTML y la huella.
+     *
+     * Es la tabla que muestra, hoja por hoja, qué hizo la última corrida (creado,
+     * ya estaba, saltado, ignorado o con error) y por qué.
+     *
+     * @return array{datos: array, html: string, huella: string}
+     */
+    private function htmlDeLaCorrida(): array
+    {
+        $ultima = PlanificacionImportacion::ultimaCorrida();
+
+        $datos = [
+            'ultima' => $ultima,
+            'hojasDeLaUltima' => $ultima?->hojas ?? collect(),
+            // Cuántos libros hay en la cola: con eso el bloque decide si el botón
+            // de "Ejecutar corrida" sirve o no.
+            'enCola' => count(ArchivosDePlanificacion::librosEnCola()),
+        ];
+
+        $html = view('planificacion._corrida', $datos)->render();
+
+        return ['datos' => $datos, 'html' => $html, 'huella' => md5($html)];
+    }
+
+    /**
      * Los datos del bloque de la cola.
      *
      * Los usan la pantalla del módulo y el endpoint que la refresca por AJAX,
@@ -88,10 +114,9 @@ class PlanificacionController extends Controller
 
         return [
             'libros' => $libros,
-            'enCola' => count(array_filter(
-                $libros,
-                fn (array $libro) => $libro['estado'] === PlanificacionImportacion::EN_ESPERA
-            )),
+            // "En la cola" son los libros que están en excel/jobs, tengan el
+            // estado que tengan: uno parcial sigue ahí esperando la corrección.
+            'enCola' => count(array_filter($libros, fn (array $libro) => $libro['en_cola'])),
             'carpetas' => [
                 'jobs' => ArchivosDePlanificacion::CARPETA_JOBS,
                 'procesados' => ArchivosDePlanificacion::CARPETA_PROCESADOS,
@@ -173,7 +198,11 @@ class PlanificacionController extends Controller
             $subido = $request->file('archivo');
             $nombre = ArchivosDePlanificacion::guardarLibro($subido);
 
-            // Al reemplazar un libro, su detalle anterior ya no dice nada.
+            // ¿Ya había un libro con este nombre? Se reemplaza (el archivo y su
+            // estado): vuelve a "en espera" y se borra el detalle de la corrida
+            // anterior, aunque hubiera quedado saltada alguna hoja.
+            $anterior = PlanificacionImportacion::where('archivo', $nombre)->first();
+
             $registro = PlanificacionImportacion::updateOrCreate(
                 ['archivo' => $nombre],
                 [
@@ -181,6 +210,14 @@ class PlanificacionController extends Controller
                     'estado' => PlanificacionImportacion::EN_ESPERA,
                     'periodo_desde' => null,
                     'periodo_hasta' => null,
+                    // Los contadores vuelven a cero junto con el detalle: el
+                    // libro arranca de nuevo, sin la observación anterior.
+                    'hojas_total' => 0,
+                    'hojas_creadas' => 0,
+                    'hojas_omitidas' => 0,
+                    'hojas_saltadas' => 0,
+                    'hojas_ignoradas' => 0,
+                    'hojas_error' => 0,
                     'cubierto_hasta' => null,
                     'en_bd_hasta' => null,
                     'dias_sin_hoja' => 0,
@@ -193,8 +230,11 @@ class PlanificacionController extends Controller
 
             $registro->hojas()->delete();
 
-            $mensaje = 'El libro «'.$nombre.'» quedó en la cola. Se procesa en la corrida de las '
-                .ImportarPlanificacion::HORA.'; hasta entonces no se toca la base de datos.';
+            $mensaje = ($anterior
+                    ? 'El libro «'.$nombre.'» se volvió a montar: reemplazó al anterior y quedó en espera'
+                    : 'El libro «'.$nombre.'» quedó en la cola')
+                .'. Se procesa en la corrida de las '.ImportarPlanificacion::HORA
+                .'; hasta entonces no se toca la base de datos.';
 
             // El módulo lo manda por AJAX: contesta con el sobre de siempre y el
             // navegador refresca sólo la cola. Sin JavaScript, el formulario
@@ -298,39 +338,168 @@ class PlanificacionController extends Controller
     }
 
     /**
-     * La cola, sólo, para que el módulo la cambie sin recargar la página.
+     * Arranca la corrida a mano (el botón "Ejecutar corrida" del módulo).
      *
-     * Devuelve el mismo bloque que se ve en el módulo (la vista parcial), su
-     * huella y los contadores. **Nunca dispara la corrida**: la importación sigue
-     * siendo a las 00:00; esto sólo cuenta lo que hay.
+     * Lanza el mismo comando que el cron, en segundo plano, y contesta en el
+     * acto: el navegador sigue el progreso consultando el estado. No cambia
+     * ninguna regla: la corrida sigue creando sólo los días que faltan.
      */
-    public function cola(): JsonResponse
+    public function ejecutarCorrida(LanzadorDeCorridas $lanzador): JsonResponse
     {
         try {
-            $cola = $this->htmlDeLaCola();
+            if (ArchivosDePlanificacion::librosEnCola() === []) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'No hay ningún libro en la cola: no hay nada para procesar.',
+                    'errors' => [],
+                ], 422);
+            }
+
+            $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+            if (($estado['estado'] ?? null) === 'en_curso' && ! ArchivosDePlanificacion::laCorridaSeInterrumpio()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Ya hay una corrida en curso: espera a que termine.',
+                    'errors' => [],
+                ], 409);
+            }
+
+            // Se anota el pedido antes de arrancar (así el log dice de dónde
+            // vino) y se deja el progreso listo para que el módulo lo lea. El
+            // comando es el mismo del cron: acá no se decide nada del proceso,
+            // sólo se arranca.
+            ArchivosDePlanificacion::anotarEnLaCorrida('Corrida pedida desde el módulo: '.$lanzador->comando());
+
+            ArchivosDePlanificacion::guardarEstadoDeLaCorrida([
+                'estado' => 'en_curso',
+                'iniciada_en' => Helper::now()->toDateTimeString(),
+                'terminada_en' => null,
+                'libros' => count(ArchivosDePlanificacion::librosEnCola()),
+                'hechos' => 0,
+                'pasos' => 0,
+                'porcentaje' => 0,
+                'paso' => 'Arrancando la corrida…',
+                'resultado' => null,
+                'resultado_en_palabras' => null,
+                'mensaje' => null,
+                'resumen' => null,
+                'observaciones' => [],
+            ]);
+
+            $lanzador->lanzar();
 
             return response()->json([
                 'ok' => true,
-                'message' => 'Cola actualizada.',
-                'data' => [
-                    'html' => $cola['html'],
-                    'huella' => $cola['huella'],
-                    'en_cola' => count(ArchivosDePlanificacion::librosEnCola()),
-                    'enCola' => $cola['datos']['enCola'],
-                    // Los nombres que siguen en la cola: el módulo los usa para
-                    // quedarse sólo con la selección que sigue existiendo.
-                    'archivos' => array_values(array_map(
-                        fn (array $libro) => $libro['archivo'],
-                        array_filter($cola['datos']['libros'], fn (array $libro) => $libro['en_cola'])
-                    )),
-                ],
-            ]);
+                'message' => 'Corrida iniciada (el mismo comando del cron). Se está procesando la cola.',
+                'data' => ['comando' => $lanzador->comando()],
+            ], 202);
         } catch (Throwable $e) {
-            $this->registrarFallo($e, 'consultar la cola de planificación periódica');
+            $this->registrarFallo($e, 'ejecutar la corrida de planificación periódica');
+
+            ArchivosDePlanificacion::olvidarEstadoDeLaCorrida();
 
             return response()->json([
                 'ok' => false,
-                'message' => 'No se pudo actualizar la cola.',
+                'message' => 'No se pudo arrancar la corrida. Intenta de nuevo.',
+                'errors' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * Cómo va la corrida: lo consulta la barra de progreso del módulo.
+     *
+     * Se lee del archivo que escribe el comando. Si quedó "en curso" y pasó
+     * demasiado tiempo, se informa como interrumpida en vez de dejar la barra
+     * girando para siempre.
+     */
+    public function corrida(): JsonResponse
+    {
+        try {
+            $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+            if ($estado === null) {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'Todavía no corrió ninguna vez.',
+                    'data' => [
+                        'estado' => 'sin_corrida',
+                        'porcentaje' => 0,
+                        'paso' => 'Todavía no corrió ninguna vez.',
+                        'resultado' => null,
+                        'resultado_en_palabras' => null,
+                        'mensaje' => null,
+                        'resumen' => null,
+                        'observaciones' => [],
+                    ],
+                ]);
+            }
+
+            if (ArchivosDePlanificacion::laCorridaSeInterrumpio()) {
+                $estado['estado'] = 'interrumpida';
+                $estado['resultado'] = 'con_errores';
+                $estado['resultado_en_palabras'] = 'La corrida se interrumpió';
+                $estado['mensaje'] = 'La corrida quedó a medias (se interrumpió). Revisá el log y el detalle del libro.';
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Estado de la corrida.',
+                'data' => $estado,
+            ]);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'consultar la corrida de planificación periódica');
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'No se pudo leer cómo va la corrida.',
+                'errors' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * El estado del módulo, para que se actualice solo sin recargar la página.
+     *
+     * Devuelve los dos bloques que cambian con el tiempo —la cola y el detalle de
+     * la última corrida— con su HTML y su huella. **Nunca dispara la corrida**: la
+     * importación sigue siendo a las 00:00; esto sólo cuenta lo que hay.
+     */
+    public function estado(): JsonResponse
+    {
+        try {
+            $cola = $this->htmlDeLaCola();
+            $corrida = $this->htmlDeLaCorrida();
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Estado actualizado.',
+                'data' => [
+                    'cola' => [
+                        'html' => $cola['html'],
+                        'huella' => $cola['huella'],
+                        'en_cola' => count(ArchivosDePlanificacion::librosEnCola()),
+                        'enCola' => $cola['datos']['enCola'],
+                        // Los nombres que siguen en la cola: el módulo los usa
+                        // para quedarse sólo con la selección que sigue viva.
+                        'archivos' => array_values(array_map(
+                            fn (array $libro) => $libro['archivo'],
+                            array_filter($cola['datos']['libros'], fn (array $libro) => $libro['en_cola'])
+                        )),
+                    ],
+                    'corrida' => [
+                        'html' => $corrida['html'],
+                        'huella' => $corrida['huella'],
+                    ],
+                ],
+            ]);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'consultar el estado de planificación periódica');
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'No se pudo actualizar el estado del módulo.',
                 'errors' => [],
             ], 500);
         }

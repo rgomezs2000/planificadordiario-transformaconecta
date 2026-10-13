@@ -9,7 +9,6 @@ use App\Models\EnergyLevel;
 use App\Models\GoalType;
 use App\Models\PreparationItem;
 use App\Models\ReflectionQuestion;
-use App\Models\ScheduleSlot;
 use App\Planificacion\ArchivosDePlanificacion;
 use Illuminate\Database\Eloquent\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
@@ -176,6 +175,21 @@ class PlantillaDelPlanificador
     /** Franjas vacías de más, ya con sus listas, para no tener que insertar filas. */
     public const FRANJAS_DE_MAS = 5;
 
+    /**
+     * Las horas que ofrece el desplegable de cada franja: todas las del día,
+     * minuto a minuto (00:00 → 23:59).
+     *
+     * Se planifica a la hora que sea, así que la lista cubre el día completo. Va
+     * en la hoja oculta LISTAS y la validación apunta a ese rango, porque una
+     * lista escrita dentro de la fórmula no aguanta más de 255 caracteres.
+     */
+    public const HORAS_DEL_DIA = 1440;
+
+    /** La primera y la última hora de esa lista, en palabras. */
+    public const PRIMERA_HORA = '00:00';
+
+    public const ULTIMA_HORA = '23:59';
+
     /** Tope de días que puede abarcar un libro de período. */
     public const DIAS_MAXIMOS = 366;
 
@@ -183,11 +197,12 @@ class PlantillaDelPlanificador
      |  Generar el libro
      ====================================================================== */
 
-    /** El libro en blanco: la hoja DIA y, al final, las instrucciones. */
+    /** El libro en blanco: la hoja DIA, las listas ocultas y, al final, las instrucciones. */
     public static function generar(): Spreadsheet
     {
         $libro = new Spreadsheet;
         self::armarDia($libro->getActiveSheet(), self::HOJA_DIA);
+        self::armarListas($libro->createSheet());
         self::armarInstrucciones($libro->createSheet());
         self::estiloDelLibro($libro);
 
@@ -216,6 +231,7 @@ class PlantillaDelPlanificador
         }
 
         self::armarDia($libro->createSheet(), self::HOJA_DIA);
+        self::armarListas($libro->createSheet());
         self::armarInstrucciones($libro->createSheet());
         self::estiloDelLibro($libro);
 
@@ -279,7 +295,7 @@ class PlantillaDelPlanificador
         }
 
         if ($fechas !== []) {
-            self::armarListasDeFechas($libro->createSheet(), $fechas);
+            self::armarListas($libro->createSheet(), $fechas);
         }
 
         self::armarInstrucciones($libro->createSheet());
@@ -340,14 +356,29 @@ class PlantillaDelPlanificador
         return 'planilla-'.$desde.'_'.$hasta.'.xlsx';
     }
 
-    /** La hoja oculta con los días del período, para la lista desplegable. */
-    private static function armarListasDeFechas(Worksheet $hoja, array $fechas): Worksheet
+    /**
+     * La hoja oculta con las listas que usan las validaciones.
+     *
+     *   · Columna A: los días del período, cuando el libro es de un período
+     *     (en la plantilla en blanco no hay ninguno: la fecha se escribe a mano).
+     *   · Columna B: todas las horas del día, para el desplegable de cada franja.
+     *
+     * Viven acá y no dentro de la fórmula de la validación porque una lista
+     * escrita ahí no aguanta más de 255 caracteres: un mes de días ya no entra, y
+     * mucho menos 1440 horarios.
+     */
+    private static function armarListas(Worksheet $hoja, array $fechas = []): Worksheet
     {
         $hoja->setTitle(self::HOJA_LISTAS);
-        $hoja->getColumnDimension('A')->setWidth(14);
+        $hoja->getColumnDimension('A')->setWidth(24);
+        $hoja->getColumnDimension('B')->setWidth(10);
 
         foreach ($fechas as $indice => $fecha) {
             $hoja->setCellValue('A'.($indice + 1), self::fechaEnPalabras($fecha));
+        }
+
+        foreach (self::horasDelDia() as $indice => $hora) {
+            $hoja->setCellValue('B'.($indice + 1), $hora);
         }
 
         $hoja->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
@@ -422,23 +453,18 @@ class PlantillaDelPlanificador
 
         // 4. Mi horario de hoy.
         //
-        // Cada franja sale con sus dos listas puestas: la hora (las del horario
-        // del sistema) y el Sí/No. Se dejan franjas de más para que no haga
+        // Cada franja sale con sus dos listas puestas: la hora (todas las del día,
+        // de 00:00 a 23:59) y el Sí/No. Se dejan franjas de más para que no haga
         // falta insertar filas; si se inserta una en medio del bloque, Excel le
         // arrastra las mismas listas.
         self::franja($hoja, $fila++, self::TITULO_HORARIO, self::AZUL, 11, true, 20);
         self::encabezados($hoja, $fila++, 'Hora ✱', '¿Qué vas a hacer? ✱', 'Hecho (Sí/No)');
 
-        $horas = self::horasDelHorario();
-
         for ($franja = 0; $franja < self::FRANJAS + self::FRANJAS_DE_MAS; $franja++) {
             self::escribible($hoja, $editables, self::COLUMNA_ETIQUETA.$fila);
             self::escribible($hoja, $editables, self::COLUMNA_VALOR.$fila);
             self::escribible($hoja, $editables, self::COLUMNA_DETALLE.$fila);
-            self::lista(
-                $hoja, self::COLUMNA_ETIQUETA.$fila, $horas, DataValidation::STYLE_WARNING,
-                'Elige la hora de la lista, o escribe otra (por ejemplo 07:30).'
-            );
+            self::listaDeHoras($hoja, self::COLUMNA_ETIQUETA.$fila);
             self::lista($hoja, self::COLUMNA_DETALLE.$fila, self::SINO);
             $hoja->getRowDimension($fila)->setRowHeight(18);
             $fila++;
@@ -553,7 +579,7 @@ class PlantillaDelPlanificador
             '',
             'LISTAS Y CELDAS YA PREPARADAS',
             '4. La energía, los Sí/No, la duración y el resultado del bloque de acción se eligen de una lista desplegable: haz clic en la celda y usa la flecha de la derecha.',
-            '5. La Hora de cada franja también es una lista, con las horas del horario del sistema (07:00 a 21:00). Si necesitas otra hora (por ejemplo 07:30), escríbela: el sistema te avisa, pero la acepta.',
+            '5. La Hora de cada franja también es una lista, con todas las horas del día: de 00:00 (12:00 a. m.) a 23:59 (11:59 p. m.), minuto a minuto. Elige la hora y el minuto de cada actividad; si necesitas una que no esté, escríbela (por ejemplo 07:30): el sistema te avisa, pero la acepta.',
             '6. El horario trae 20 franjas listas (las 15 del horario y 5 de más), cada una con sus dos listas puestas. Si insertas una fila en medio del horario, Excel le arrastra las mismas listas.',
             '7. La celda de la FECHA está preparada para escribir una fecha (dd/mm/aaaa). Excel no tiene calendario desplegable en un archivo normal: como el nombre de la hoja es el que manda, esta celda se puede dejar vacía.',
             '',
@@ -566,12 +592,13 @@ class PlantillaDelPlanificador
             'CÓMO SE ENTREGA',
             '12. No muevas, borres ni agregues filas: la hoja está protegida para evitarlo. Si necesitas tocar la estructura, quita la protección desde Revisar → Quitar protección de hoja, bajo tu responsabilidad.',
             '13. Cuando el libro esté listo, se monta en el módulo Planificación periódica. El sistema lo procesa solo en la corrida de las 00:00.',
-            '14. Un día que ya está cargado en el sistema no se vuelve a cargar nunca, aunque el libro lo traiga de nuevo: la corrida solo llena lo que falta. Para corregir un día ya cargado se edita desde Consultar diario.',
-            '15. Si un día no llegó a cargarse porque faltaba un dato, corrige la hoja, vuelve a montar el libro y espera la corrida siguiente: esa hoja se reintenta.',
-            '16. Esta hoja de INSTRUCCIONES se ignora siempre. Puedes dejarla o borrarla antes de entregar el libro: el resultado es el mismo.',
+            '14. Una vez descargado el diario, enviar el mismo al grupo de Telegram de la cohorte correspondiente de Transforma-Conecta, al canal correspondiente para tal actividad, al o a los día(s) que le(s) corresponda(n).',
+            '15. Un día que ya está cargado en el sistema no se vuelve a cargar nunca, aunque el libro lo traiga de nuevo: la corrida solo llena lo que falta. Para corregir un día ya cargado se edita desde Consultar diario.',
+            '16. Si un día no llegó a cargarse porque faltaba un dato, corrige la hoja, vuelve a montar el libro y espera la corrida siguiente: esa hoja se reintenta.',
+            '17. Esta hoja de INSTRUCCIONES se ignora siempre. Puedes dejarla o borrarla antes de entregar el libro: el resultado es el mismo.',
             '',
-            'HORARIO DEL SISTEMA (las horas de la lista desplegable de cada franja)',
-            self::horarioSugerido(),
+            'HORAS DE LA LISTA DESPLEGABLE DE CADA FRANJA',
+            'De 00:00 (12:00 a. m.) a 23:59 (11:59 p. m.), minuto a minuto: '.self::HORAS_DEL_DIA.' horas para elegir. También se puede escribir la hora a mano.',
         ];
 
         foreach ($lineas as $linea) {
@@ -689,26 +716,23 @@ class PlantillaDelPlanificador
     }
 
     /**
-     * Las horas del horario diario, tal como salen en la lista desplegable de
-     * cada franja de la hoja (07:00, 08:00… 21:00).
+     * Todas las horas del día, minuto a minuto: de 00:00 a 23:59.
+     *
+     * Es la lista que ofrece el desplegable de la Hora de cada franja, así que
+     * cualquier actividad se puede planificar a la hora y al minuto que sea (no
+     * solo a las horas enteras del horario base).
      *
      * @return list<string>
      */
-    public static function horasDelHorario(): array
+    public static function horasDelDia(): array
     {
-        return ScheduleSlot::active()->pluck('start_time')
-            ->map(fn (mixed $hora) => Helper::time($hora, 'H:i'))
-            ->filter()
-            ->values()
-            ->all();
-    }
+        $horas = [];
 
-    /** Esas mismas horas, en una línea, para la hoja de instrucciones. */
-    public static function horarioSugerido(): string
-    {
-        $horas = self::horasDelHorario();
+        for ($minuto = 0; $minuto < self::HORAS_DEL_DIA; $minuto++) {
+            $horas[] = sprintf('%02d:%02d', intdiv($minuto, 60), $minuto % 60);
+        }
 
-        return $horas === [] ? '—' : implode('  ·  ', $horas);
+        return $horas;
     }
 
     /* ======================================================================
@@ -901,6 +925,31 @@ class PlantillaDelPlanificador
         $validacion->setPrompt('Escribe la fecha (dd/mm/aaaa o aaaa-mm-dd). El nombre de la hoja es el que manda.');
         $validacion->setFormula1('DATE(2020,1,1)');
         $validacion->setFormula2('DATE(2100,12,31)');
+
+        $hoja->setDataValidation($celda, $validacion);
+    }
+
+    /**
+     * La hora de una franja: lista desplegable con todas las horas del día.
+     *
+     * La lista vive en la hoja oculta LISTAS y la validación apunta a ese rango
+     * (1440 valores no entran en una fórmula). Se deja con aviso, no con bloqueo:
+     * si alguien escribe una hora que no está en la lista, se acepta igual.
+     */
+    private static function listaDeHoras(Worksheet $hoja, string $celda): void
+    {
+        $validacion = new DataValidation;
+        $validacion->setType(DataValidation::TYPE_LIST);
+        $validacion->setShowDropDown(true);
+        $validacion->setAllowBlank(true);
+        $validacion->setShowErrorMessage(true);
+        $validacion->setErrorStyle(DataValidation::STYLE_WARNING);
+        $validacion->setErrorTitle('Hora fuera de la lista');
+        $validacion->setError('Elige una hora de la lista (de 00:00 a 23:59) o escríbela como hh:mm.');
+        $validacion->setShowInputMessage(true);
+        $validacion->setPromptTitle('Hora de la franja');
+        $validacion->setPrompt('De 00:00 a 23:59, minuto a minuto. También puedes escribirla (por ejemplo 07:30).');
+        $validacion->setFormula1(self::HOJA_LISTAS.'!$B$1:$B$'.self::HORAS_DEL_DIA);
 
         $hoja->setDataValidation($celda, $validacion);
     }

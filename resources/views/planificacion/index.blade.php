@@ -156,67 +156,13 @@
 
     {{-- ==================================================================
          4. EL DETALLE DE LA ÚLTIMA CORRIDA
+
+         Igual que la cola: en un contenedor propio, con su huella, para que el
+         script lo refresque solo por AJAX sin recargar la página.
          ================================================================== --}}
-    @if ($ultima)
-        <section class="tc-tarjeta tf-seccion mb-3">
-            <h3 class="tf-titulo">
-                <i class="bi bi-list-check" aria-hidden="true"></i>
-                Detalle de la última corrida
-            </h3>
-
-            <div class="tf-planificacion__cifras mb-2">
-                <span><strong>Libro:</strong> {{ $ultima->archivo }}</span>
-                <span><strong>Procesado:</strong> {{ Helper::dateTime($ultima->procesado_en) }}</span>
-                <span><strong>Período:</strong> {{ $ultima->periodoEnPalabras() }}</span>
-                <span><strong>Cubierto sin huecos hasta:</strong> {{ $ultima->cubiertoEnPalabras() }}</span>
-                <span><strong>Creados:</strong> {{ $ultima->hojas_creadas }}</span>
-                <span><strong>Ya estaban:</strong> {{ $ultima->hojas_omitidas }}</span>
-                <span><strong>Saltados:</strong> {{ $ultima->hojas_saltadas }}</span>
-                <span><strong>Ignorados:</strong> {{ $ultima->hojas_ignoradas }}</span>
-            </div>
-
-            @if ($ultima->mensaje)
-                <p class="tf-ayuda">{{ $ultima->mensaje }}</p>
-            @endif
-
-            <div class="table-responsive">
-                <table class="table tf-tabla mb-0">
-                    <thead>
-                        <tr>
-                            <th scope="col">Hoja</th>
-                            <th scope="col">Día</th>
-                            <th scope="col">Acción</th>
-                            <th scope="col">Motivo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($hojasDeLaUltima as $hoja)
-                            <tr>
-                                <td>{{ $hoja->hoja }}</td>
-                                <td>{{ $hoja->diaEnPalabras() }}</td>
-                                <td>
-                                    <span class="tf-insignia tf-insignia--{{ $hoja->colorDeAccion() }}">
-                                        {{ $hoja->etiquetaDeAccion() }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {{ $hoja->motivo }}
-
-                                    @if ($hoja->listaDeAvisos() !== [])
-                                        <ul class="tf-avisos">
-                                            @foreach ($hoja->listaDeAvisos() as $aviso)
-                                                <li>{{ $aviso }}</li>
-                                            @endforeach
-                                        </ul>
-                                    @endif
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    @endif
+    <div id="corrida-contenedor" data-huella="{{ $huellaCorrida }}">
+        @include('planificacion._corrida')
+    </div>
 
     {{-- ==================================================================
          5. CÓMO FUNCIONA LA CORRIDA
@@ -250,19 +196,66 @@
         </a>
     </div>
 
+    {{-- ==================================================================
+         6. EL MODAL DE LA CORRIDA MANUAL
+
+         Va aca afuera (y no dentro del bloque de la corrida) porque el bloque se
+         refresca solo: si el modal viviera adentro, un refresco lo cerraria en
+         pleno progreso.
+         ================================================================== --}}
+    <div class="modal fade" id="modalCorrida" tabindex="-1" aria-labelledby="modalCorridaTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalCorridaTitulo">
+                        <i class="bi bi-play-circle" aria-hidden="true"></i>
+                        Corrida manual
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+
+                <div class="modal-body">
+                    <p class="tf-corrida__paso" id="corrida-paso">Arrancando la corrida...</p>
+
+                    <div class="progress tf-corrida__barra" role="progressbar" id="corrida-barra"
+                         aria-label="Progreso de la corrida" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             id="corrida-barra-relleno" style="width: 0%">0%</div>
+                    </div>
+
+                    <div id="corrida-resultado" class="mt-3" aria-live="polite"></div>
+
+                    <p class="tf-planificacion__motivo mt-3 mb-0">
+                        La corrida crea en el diario <strong>solo los dias que faltan</strong> (no pisa nada) y deja
+                        el paso a paso en <code>{{ \App\Planificacion\ArchivosDePlanificacion::LOG_CORRIDA }}</code>.
+                        Podes cerrar esta ventana: la corrida sigue sola.
+                    </p>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="tc-boton tc-boton--contorno" data-bs-dismiss="modal">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 @endsection
 
 @push('scripts')
     <script>
-        {{-- Montar el libro, eliminar de la cola y mantener la cola al día: todo
-             por AJAX y sin recargar la página.
+        {{-- Montar el libro, eliminar de la cola y mantener el módulo al día:
+             todo por AJAX y sin recargar la página.
 
-             El refresco automático sólo MIRA. Pide la cola cada 20 segundos y
-             cambia la tabla únicamente si el servidor devuelve otra huella; no
-             dispara la corrida, que sigue siendo a las 00:00.
+             El refresco automático sólo MIRA. Pide el estado cada 20 segundos
+             (GET /planificacion/estado) y cambia cada bloque únicamente si el
+             servidor devuelve otra huella; no dispara la corrida, que sigue
+             siendo a las 00:00.
 
-             La tabla la maneja DataTables (paginado, orden y búsqueda) y cada
-             columna tiene su filtro, como en el buscador de diarios. --}}
+             Las dos tablas —la cola y el detalle de la última corrida— las
+             maneja DataTables: paginado, orden y búsqueda que filtra desde la
+             primera letra, más un filtro por columna en cada una. --}}
         $(function () {
             var P = window.Planificador;
 
@@ -270,81 +263,107 @@
                 return;
             }
 
-            /** Cada cuánto se vuelve a pedir la cola (milisegundos). */
+            /** Cada cuánto se vuelve a pedir el estado (milisegundos). */
             var LATIDO = 20000;
 
             var $cola = $('#cola-contenedor');
+            var $corrida = $('#corrida-contenedor');
             var $archivo = $('#archivo');
             var $limpiar = $('#archivo-limpiar');
             var $formulario = $archivo.closest('form');
 
-            var tabla = null;
-            var huella = $cola.data('huella') || null;
-            var seleccion = [];          // nombres elegidos, aunque cambien de página
-            var filtros = {};            // índice de columna => valor del filtro
-            var busqueda = '';           // caja de búsqueda de DataTables
-            var largoPagina = P.config.tabla.pageLength;
-            var paginaActual = 0;
+            var seleccion = [];          // libros elegidos, aunque cambien de página
 
             /* ==============================================================
-               La tabla: DataTables con un filtro por columna
+               Los bloques que se refrescan solos
                ============================================================== */
 
-            /** Arma DataTables sobre la tabla de la cola (o la deja en null). */
-            function armarTabla() {
-                var $tabla = $('#tabla-cola');
+            /** Un bloque con su tabla: contenedor, selector y estado guardado. */
+            function bloque($contenedor, selector, columnDefs, idioma) {
+                return {
+                    $contenedor: $contenedor,
+                    selector: selector,
+                    columnDefs: columnDefs,
+                    idioma: $.extend({}, P.Tabla.idioma, { search: 'Palabra clave:' }, idioma),
+                    tabla: null,
+                    huella: $contenedor.data('huella') || null,
+                    filtros: {},
+                    busqueda: '',
+                    largo: P.config.tabla.pageLength,
+                    pagina: 0
+                };
+            }
+
+            /** Guarda filtros, página y búsqueda antes de cambiar la tabla. */
+            function recordar(uno) {
+                if (! uno.tabla) {
+                    return;
+                }
+
+                var info = uno.tabla.page.info();
+
+                uno.largo = info.length;
+                uno.pagina = info.page;
+                uno.busqueda = uno.tabla.search();
+
+                uno.$contenedor.find('[data-filtro]').each(function () {
+                    uno.filtros[$(this).data('filtro')] = $(this).val();
+                });
+            }
+
+            /** Arma (o vuelve a armar) DataTables sobre la tabla del bloque. */
+            function armar(uno) {
+                var $tabla = uno.$contenedor.find(uno.selector);
 
                 if (! $tabla.length) {
-                    tabla = null;
+                    uno.tabla = null;
 
                     return;
                 }
 
-                tabla = P.Tabla.crear('#tabla-cola', {
+                uno.tabla = P.Tabla.crear(uno.selector, {
                     orderCellsTop: true,
-                    pageLength: largoPagina,
-                    displayStart: paginaActual * largoPagina,
-                    columnDefs: [
-                        // La casilla y los botones no se ordenan ni se buscan.
-                        { targets: 0, orderable: false, searchable: false },
-                        { targets: 7, orderable: false, searchable: false }
-                    ],
-                    language: $.extend({}, P.Tabla.idioma, {
-                        search: 'Palabra clave:',
-                        searchPlaceholder: 'Nombre del libro'
-                    })
+                    searchDelay: 0,
+                    pageLength: uno.largo,
+                    displayStart: uno.pagina * uno.largo,
+                    columnDefs: uno.columnDefs,
+                    language: uno.idioma
                 });
 
-                // Se devuelven los filtros que el usuario tenía puestos.
-                $cola.find('[data-cola-filtro]').each(function () {
-                    var indice = $(this).data('cola-filtro');
+                // Se devuelven los filtros y la búsqueda que estaban puestos.
+                uno.$contenedor.find('[data-filtro]').each(function () {
+                    var indice = $(this).data('filtro');
 
-                    if (filtros[indice] !== undefined) {
-                        $(this).val(filtros[indice]);
+                    if (uno.filtros[indice] !== undefined) {
+                        $(this).val(uno.filtros[indice]);
                     }
                 });
 
-                $.each(filtros, function (indice, valor) {
-                    tabla.column(parseInt(indice, 10)).search(valor || '');
+                $.each(uno.filtros, function (indice, valor) {
+                    uno.tabla.column(parseInt(indice, 10)).search(valor || '');
                 });
 
-                tabla.search(busqueda).draw(false);
+                uno.tabla.search(uno.busqueda).draw(false);
 
-                // La búsqueda general se recuerda sola.
+                // La búsqueda general se recuerda sola y filtra desde la
+                // primera letra.
                 $tabla.on('search.dt', function () {
-                    busqueda = tabla.search();
-                });
-
-                // Al cambiar de página o de filtro, las casillas marcadas siguen
-                // marcadas (la selección vive fuera de la tabla).
-                $tabla.on('draw.dt', function () {
-                    aplicarSeleccion();
-                    actualizar();
+                    uno.busqueda = uno.tabla.search();
                 });
             }
 
+            var enCola = bloque($cola, '#tabla-cola', [
+                // La casilla y los botones no se ordenan ni se buscan.
+                { targets: 0, orderable: false, searchable: false },
+                { targets: 7, orderable: false, searchable: false }
+            ], { searchPlaceholder: 'Nombre del libro' });
+
+            var enCorrida = bloque($corrida, '#tabla-corrida', [], {
+                searchPlaceholder: 'Hoja, día o motivo'
+            });
+
             /* ==============================================================
-               La selección: vale para todas las páginas
+               La selección de la cola (vale para todas las páginas)
                ============================================================== */
 
             function marcadosEnPantalla() {
@@ -406,14 +425,24 @@
                 actualizar();
             });
 
-            $cola.on('keyup change', '[data-cola-filtro]', function () {
-                var indice = parseInt($(this).data('cola-filtro'), 10);
+            // Los filtros de las dos tablas (delegados: sobreviven al refresco).
+            $(document).on('keyup change', '[data-filtro]', function () {
+                var $campo = $(this);
+                var uno = $campo.closest('#corrida-contenedor').length ? enCorrida : enCola;
+                var indice = parseInt($campo.data('filtro'), 10);
 
-                filtros[indice] = $(this).val();
+                uno.filtros[indice] = $campo.val();
 
-                if (tabla) {
-                    tabla.column(indice).search($(this).val()).draw();
+                if (uno.tabla) {
+                    uno.tabla.column(indice).search($campo.val()).draw();
                 }
+            });
+
+            // Al cambiar de página o de filtro, las casillas marcadas siguen
+            // marcadas (la selección vive fuera de la tabla).
+            $cola.on('draw.dt', '#tabla-cola', function () {
+                aplicarSeleccion();
+                actualizar();
             });
 
             /* ==============================================================
@@ -430,18 +459,40 @@
                 }, 900);
             }
 
+            /** Cambia el bloque sólo si su huella es otra. Devuelve si cambió. */
+            function refrescarBloque(uno, datos) {
+                if (! datos || datos.huella === uno.huella) {
+                    return false;
+                }
+
+                uno.huella = datos.huella;
+
+                recordar(uno);
+
+                if (uno.tabla) {
+                    uno.tabla.destroy();
+                    uno.tabla = null;
+                }
+
+                uno.$contenedor.html(datos.html);
+
+                armar(uno);
+
+                return true;
+            }
+
             /**
-             * Vuelve a pedir la cola. Sólo cambia la pantalla si la huella es
-             * otra: si nada pasó, no toca el DOM (ni pierde filtros, ni página,
-             * ni selección). Nunca dispara la importación.
+             * Vuelve a pedir el estado del módulo. Sólo cambia la pantalla si algo
+             * cambió: si no, no toca el DOM (ni pierde filtros, ni página, ni
+             * selección). Nunca dispara la importación.
              */
-            function refrescarCola() {
+            function refrescar() {
                 if (document.hidden) {
                     return;
                 }
 
                 $.ajax({
-                    url: @json(route('planificacion.cola')),
+                    url: @json(route('planificacion.estado')),
                     type: 'GET',
                     dataType: 'json',
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
@@ -450,41 +501,37 @@
                         return;
                     }
 
-                    if (respuesta.data.huella === huella) {
-                        return;
-                    }
-
-                    huella = respuesta.data.huella;
-
                     // La selección se queda sólo con lo que sigue en la cola.
-                    var enCola = respuesta.data.archivos || [];
+                    var archivos = (respuesta.data.cola || {}).archivos || [];
 
                     seleccion = seleccion.filter(function (nombre) {
-                        return enCola.indexOf(nombre) !== -1;
+                        return archivos.indexOf(nombre) !== -1;
                     });
 
-                    if (tabla) {
-                        tabla.destroy();
-                        tabla = null;
+                    var cambioLaCola = refrescarBloque(enCola, respuesta.data.cola);
+                    var cambioLaCorrida = refrescarBloque(enCorrida, respuesta.data.corrida);
+
+                    if (cambioLaCola) {
+                        aplicarSeleccion();
+                        actualizar();
                     }
 
-                    $cola.html(respuesta.data.html);
-                    armarTabla();
-                    aplicarSeleccion();
-                    actualizar();
-                    latir();
+                    if (cambioLaCola || cambioLaCorrida) {
+                        latir();
+                    }
                 });
             }
 
-            armarTabla();
+            armar(enCola);
+            armar(enCorrida);
             actualizar();
 
-            window.setInterval(refrescarCola, LATIDO);
+            window.setInterval(refrescar, LATIDO);
 
             // Al volver a la pestaña se mira enseguida.
             document.addEventListener('visibilitychange', function () {
                 if (! document.hidden) {
-                    refrescarCola();
+                    refrescar();
                 }
             });
 
@@ -528,7 +575,7 @@
 
                     limpiarArchivo();
                     P.Alerta.exito(respuesta.message, 'Libro montado en la cola');
-                    refrescarCola();
+                    refrescar();
                 }).fail(function (xhr) {
                     P.Alerta.error(P.Ajax.mensajeDeError(xhr));
                 }).always(function () {
@@ -565,7 +612,7 @@
                             alExito: function (respuesta) {
                                 seleccion = [];
                                 P.Alerta.exito(respuesta.message, 'Libros eliminados');
-                                refrescarCola();
+                                refrescar();
                             }
                         });
                     }
@@ -590,7 +637,7 @@
                             alExito: function (respuesta) {
                                 marcar(archivo, false);
                                 P.Alerta.exito(respuesta.message, 'Libro quitado de la cola');
-                                refrescarCola();
+                                refrescar();
                             }
                         });
                     }
@@ -614,6 +661,182 @@
             revisarArchivo();
 
             $limpiar.on('click', limpiarArchivo);
+
+            /* ==============================================================
+               La corrida a mano: confirmación, barra de progreso y resultado
+               ============================================================== */
+
+            var $modalCorrida = $('#modalCorrida');
+            var modalCorrida = null;
+            var relojCorrida = null;
+
+            /** Abre el modal de la corrida con la barra en cero. */
+            function abrirCorrida() {
+                if (! window.bootstrap || ! $modalCorrida.length) {
+                    return;
+                }
+
+                if (! modalCorrida) {
+                    modalCorrida = window.bootstrap.Modal.getOrCreateInstance($modalCorrida[0], {
+                        backdrop: 'static',
+                        keyboard: false
+                    });
+                }
+
+                $('#corrida-resultado').empty();
+                $('#corrida-barra-relleno')
+                    .removeClass('bg-success bg-warning bg-danger')
+                    .addClass('progress-bar-animated progress-bar-striped');
+
+                pintarCorrida({ estado: 'en_curso', porcentaje: 0, paso: 'Arrancando la corrida…' });
+
+                modalCorrida.show();
+            }
+
+            /** La barra y el paso que se está dando. */
+            function pintarCorrida(datos) {
+                var porcentaje = Math.max(0, Math.min(100, parseInt(datos.porcentaje || 0, 10) || 0));
+
+                $('#corrida-barra').attr('aria-valuenow', porcentaje);
+                $('#corrida-barra-relleno').css('width', porcentaje + '%').text(porcentaje + '%');
+                $('#corrida-paso').text(datos.paso || 'Procesando…');
+            }
+
+            /** El resultado final, dentro del modal. */
+            function mostrarResultado(datos) {
+                var resumen = datos.resumen || {};
+                var clase = datos.resultado === 'completada' ? 'success'
+                    : (datos.resultado === 'con_observaciones' ? 'warning' : 'danger');
+                var icono = clase === 'success' ? 'check-circle'
+                    : (clase === 'warning' ? 'exclamation-triangle' : 'x-octagon');
+
+                var $caja = $('<div>').addClass('alert alert-' + clase + ' mb-0');
+
+                $('<strong>').html('<i class="bi bi-' + icono + '"></i> '
+                    + (datos.resultado_en_palabras || 'Corrida terminada')).appendTo($caja);
+
+                if (datos.mensaje) {
+                    $('<p>').addClass('mb-2 mt-1').text(datos.mensaje).appendTo($caja);
+                }
+
+                if (resumen && (resumen.creados || resumen.omitidos || resumen.saltados || resumen.ignorados || resumen.errores)) {
+                    $('<p>').addClass('mb-0').html(
+                        '<strong>Creados:</strong> ' + (resumen.creados || 0)
+                        + ' · <strong>Ya estaban:</strong> ' + (resumen.omitidos || 0)
+                        + ' · <strong>Saltados:</strong> ' + (resumen.saltados || 0)
+                        + ' · <strong>Ignorados:</strong> ' + (resumen.ignorados || 0)
+                        + ' · <strong>Errores:</strong> ' + (resumen.errores || 0)
+                    ).appendTo($caja);
+                }
+
+                if (datos.observaciones && datos.observaciones.length) {
+                    $('<p>').addClass('mb-1 mt-2').html('<strong>Observaciones</strong>').appendTo($caja);
+
+                    var $lista = $('<ul>').addClass('tf-avisos mb-0');
+
+                    $.each(datos.observaciones, function (i, observacion) {
+                        $('<li>').text(observacion).appendTo($lista);
+                    });
+
+                    $lista.appendTo($caja);
+                }
+
+                $('#corrida-resultado').empty().append($caja);
+            }
+
+            function detenerReloj() {
+                if (relojCorrida) {
+                    window.clearInterval(relojCorrida);
+                    relojCorrida = null;
+                }
+            }
+
+            /** Pregunta cómo va la corrida y pinta el modal. */
+            function seguirCorrida() {
+                $.ajax({
+                    url: $corrida.find('#corrida-ejecutar').data('estado-url') || @json(route('planificacion.corrida')),
+                    type: 'GET',
+                    dataType: 'json',
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                }).done(function (respuesta) {
+                    if (! respuesta || ! respuesta.ok || ! respuesta.data) {
+                        return;
+                    }
+
+                    pintarCorrida(respuesta.data);
+
+                    if (['terminada', 'interrumpida', 'sin_corrida'].indexOf(respuesta.data.estado) !== -1) {
+                        detenerReloj();
+
+                        if (respuesta.data.estado !== 'sin_corrida') {
+                            mostrarResultado(respuesta.data);
+                            $('#corrida-barra-relleno').removeClass('progress-bar-animated progress-bar-striped');
+                        }
+
+                        refrescar();
+                    }
+                });
+            }
+
+            function empezarARelojear() {
+                detenerReloj();
+                relojCorrida = window.setInterval(seguirCorrida, 1000);
+                seguirCorrida();
+            }
+
+            // El botón: confirma con bootbox y arranca la corrida.
+            $corrida.on('click', '#corrida-ejecutar', function () {
+                var $boton = $(this);
+
+                if ($boton.prop('disabled')) {
+                    return;
+                }
+
+                P.Alerta.confirmar({
+                    titulo: 'Ejecutar corrida',
+                    mensaje: '¿Desea ejecutar la corrida manual? Se procesan ahora los libros de la cola, '
+                        + 'con las mismas reglas de la corrida de las ' + @json(\App\Console\Commands\ImportarPlanificacion::HORA) + '.',
+                    textoAceptar: 'Sí, ejecutar',
+                    alAceptar: function () {
+                        $.ajax({
+                            url: $boton.data('url'),
+                            type: 'POST',
+                            dataType: 'json',
+                            headers: {
+                                Accept: 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': P.token
+                            }
+                        }).done(function (respuesta) {
+                            if (! respuesta || respuesta.ok === false) {
+                                P.Alerta.error(respuesta && respuesta.message
+                                    ? respuesta.message
+                                    : 'No se pudo arrancar la corrida.');
+
+                                return;
+                            }
+
+                            abrirCorrida();
+                            empezarARelojear();
+                        }).fail(function (xhr) {
+                            P.Alerta.error(P.Ajax.mensajeDeError(xhr));
+                        });
+                    }
+                });
+            });
+
+            // Si la página se abre con una corrida en curso, se sigue mostrando.
+            $.ajax({
+                url: @json(route('planificacion.corrida')),
+                type: 'GET',
+                dataType: 'json',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            }).done(function (respuesta) {
+                if (respuesta && respuesta.ok && respuesta.data && respuesta.data.estado === 'en_curso') {
+                    abrirCorrida();
+                    empezarARelojear();
+                }
+            });
         });
     </script>
 @endpush

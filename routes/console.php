@@ -34,11 +34,14 @@ Artisan::command('inspire', function () {
 |
 |         * * * * * cd /ruta/del/proyecto && php artisan schedule:run >> /dev/null 2>&1
 |
+| El nombre del comando sale de ImportarPlanificacion::COMANDO, el mismo que usa
+| el botón "Ejecutar corrida" del módulo: hay un solo comando y una sola lógica.
+|
 | withoutOverlapping() evita que dos corridas se pisen si una se demora.
 |
 */
 
-Schedule::command('planificacion:importar')
+Schedule::command(ImportarPlanificacion::COMANDO)
     ->dailyAt(ImportarPlanificacion::HORA)
     ->withoutOverlapping()
     ->description('Carga en el diario los días que falten del Excel de planificación periódica');

@@ -22,7 +22,7 @@
         <i class="bi bi-inboxes" aria-hidden="true"></i>
         Libros de la cola
         @if ($enCola > 0)
-            <span class="tf-obligatorio-tag">{{ $enCola }} en espera</span>
+            <span class="tf-obligatorio-tag">{{ $enCola }} en la cola</span>
         @endif
     </h3>
 
@@ -68,19 +68,20 @@
                 </tr>
 
                 {{-- Filtros de la tabla: uno por columna. La búsqueda general de
-                     DataTables (arriba) busca por palabra clave en todo. --}}
+                     DataTables (arriba) busca por palabra clave en todo, desde
+                     la primera letra. --}}
                 <tr class="tf-cola__filtros">
                     <th></th>
                     <th>
-                        <input type="search" class="form-control form-control-sm" data-cola-filtro="1"
+                        <input type="search" class="form-control form-control-sm" data-filtro="1"
                                placeholder="Nombre del libro" aria-label="Buscar por nombre del libro">
                     </th>
                     <th>
-                        <input type="search" class="form-control form-control-sm" data-cola-filtro="2"
+                        <input type="search" class="form-control form-control-sm" data-filtro="2"
                                placeholder="Período" aria-label="Buscar por período">
                     </th>
                     <th>
-                        <select class="form-select form-select-sm" data-cola-filtro="3"
+                        <select class="form-select form-select-sm" data-filtro="3"
                                 aria-label="Filtrar por estado">
                             <option value="">Todos los estados</option>
                             @foreach ($estados as $estado)
@@ -89,15 +90,15 @@
                         </select>
                     </th>
                     <th>
-                        <input type="search" class="form-control form-control-sm" data-cola-filtro="4"
+                        <input type="search" class="form-control form-control-sm" data-filtro="4"
                                placeholder="Cubierto hasta" aria-label="Buscar por cubierto sin huecos">
                     </th>
                     <th>
-                        <input type="search" class="form-control form-control-sm" data-cola-filtro="5"
+                        <input type="search" class="form-control form-control-sm" data-filtro="5"
                                placeholder="Última corrida" aria-label="Buscar por última corrida">
                     </th>
                     <th>
-                        <input type="search" class="form-control form-control-sm" data-cola-filtro="6"
+                        <input type="search" class="form-control form-control-sm" data-filtro="6"
                                placeholder="Qué pasó" aria-label="Buscar por lo que pasó">
                     </th>
                     <th></th>
