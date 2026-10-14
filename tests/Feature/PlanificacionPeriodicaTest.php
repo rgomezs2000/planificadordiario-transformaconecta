@@ -851,6 +851,154 @@ class PlanificacionPeriodicaTest extends TestCase
     }
 
     /**
+     * El detalle de la corrida se mantiene al día solo, igual que la cola: trae
+     * su cartel de "En vivo" y, si la corrida arrancó y todavía no cerró ningún
+     * libro, lo dice en vez de mostrar que nunca corrió nada.
+     */
+    public function test_el_detalle_de_la_corrida_avisa_que_esta_en_vivo(): void
+    {
+        $this->montarLibro('planilla octubre.xlsx');
+
+        $reposo = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $reposo->assertOk();
+
+        $html = (string) $reposo->json('data.corrida.html');
+
+        $this->assertStringContainsString('id="corrida-latido"', $html);
+        $this->assertStringContainsString('tf-envivo', $html);
+        $this->assertStringContainsString('Todavía no corrió ninguna vez', $html);
+
+        // La corrida arrancó y todavía no terminó la primera hoja.
+        ArchivosDePlanificacion::guardarEstadoDeLaCorrida([
+            'estado' => 'en_curso',
+            'iniciada_en' => Helper::now()->toDateTimeString(),
+            'porcentaje' => 10,
+            'paso' => 'Procesando…',
+        ]);
+
+        $arrancando = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $arrancando->assertOk();
+
+        $this->assertStringContainsString(
+            'La corrida arrancó',
+            (string) $arrancando->json('data.corrida.html')
+        );
+
+        // Una corrida que quedó colgada no cuenta como viva: vuelve el aviso de
+        // siempre, no uno que prometa hojas que no van a llegar.
+        ArchivosDePlanificacion::guardarEstadoDeLaCorrida([
+            'estado' => 'en_curso',
+            'iniciada_en' => Helper::now()->subHours(5)->toDateTimeString(),
+            'actualizado_en' => Helper::now()->subHours(5)->toDateTimeString(),
+        ]);
+
+        $colgada = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $colgada->assertOk();
+
+        $this->assertStringContainsString(
+            'Todavía no corrió ninguna vez',
+            (string) $colgada->json('data.corrida.html')
+        );
+    }
+
+    /**
+     * Mientras la corrida trabaja, el libro que se está procesando es el que sale
+     * en el detalle y sus hojas van apareciendo una por una: es lo que hace que la
+     * tabla se vea llenar en vivo, sin recargar la página.
+     */
+    public function test_el_detalle_muestra_el_libro_que_se_esta_procesando(): void
+    {
+        $registro = PlanificacionImportacion::create([
+            'archivo' => 'planilla-octubre.xlsx',
+            'estado' => PlanificacionImportacion::EN_CURSO,
+            'hojas_total' => 3,
+            'hojas_creadas' => 1,
+            'subido_en' => Helper::now(),
+            'procesado_en' => Helper::now(),
+            'mensaje' => 'La corrida lo está procesando ahora: el detalle se llena hoja por hoja.',
+        ]);
+
+        $registro->hojas()->create([
+            'hoja' => '2026-10-01',
+            'fecha' => '2026-10-01',
+            'accion' => PlanificacionHoja::CREADO,
+            'motivo' => 'Diario del jueves 1 de octubre de 2026 creado.',
+            'procesado_en' => Helper::now(),
+        ]);
+
+        $primera = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $primera->assertOk();
+
+        $detalle = (string) $primera->json('data.corrida.html');
+
+        // El detalle ya trae el libro y la hoja que se acaba de procesar.
+        $this->assertStringContainsString('planilla-octubre.xlsx', $detalle);
+        $this->assertStringContainsString('2026-10-01', $detalle);
+        $this->assertStringContainsString('La corrida lo está procesando ahora', $detalle);
+
+        // Y la cola lo cuenta como lo que es: un libro que se está procesando.
+        $cola = (string) $primera->json('data.cola.html');
+
+        $this->assertStringContainsString('Procesando ahora', $cola);
+        $this->assertStringContainsString('Procesando: 1 creado', $cola);
+
+        // Llega la hoja siguiente: la huella cambia, así que el módulo rearma la
+        // tabla y la fila nueva aparece sola.
+        $registro->hojas()->create([
+            'hoja' => '2026-10-02',
+            'fecha' => '2026-10-02',
+            'accion' => PlanificacionHoja::SALTADO,
+            'motivo' => 'Le falta el cierre del día.',
+            'procesado_en' => Helper::now(),
+        ]);
+
+        $segunda = $this->get(route('planificacion.estado', absolute: false), ['Accept' => 'application/json']);
+
+        $segunda->assertOk();
+
+        $this->assertNotSame(
+            $primera->json('data.corrida.huella'),
+            $segunda->json('data.corrida.huella')
+        );
+
+        $this->assertStringContainsString('2026-10-02', (string) $segunda->json('data.corrida.html'));
+        $this->assertStringContainsString('Le falta el cierre del día', (string) $segunda->json('data.corrida.html'));
+    }
+
+    /**
+     * Un libro que se está procesando tiene su propia etiqueta en el filtro de
+     * estados de la cola: mientras corre no está "en espera" ni "procesado".
+     */
+    public function test_el_estado_en_curso_tiene_su_etiqueta(): void
+    {
+        $enCurso = new PlanificacionImportacion(['estado' => PlanificacionImportacion::EN_CURSO]);
+
+        $this->assertTrue($enCurso->estaEnCurso());
+        $this->assertSame('Procesando ahora', $enCurso->etiquetaDeEstado());
+        $this->assertSame('azul', $enCurso->colorDeEstado());
+        $this->assertSame(
+            'La corrida lo está procesando ahora.',
+            $enCurso->setAttribute('procesado_en', Helper::now())->resumenEnPalabras()
+        );
+
+        // Con hojas ya hechas, el resumen va contando lo que lleva.
+        $enCurso->hojas_creadas = 2;
+
+        $this->assertSame('Procesando: 2 creados', $enCurso->resumenEnPalabras());
+
+        // Y la etiqueta viaja al filtro de la cola.
+        $this->montarLibro('planilla octubre.xlsx');
+
+        $this->get(route('planificacion.index', absolute: false))
+            ->assertOk()
+            ->assertSee('Procesando ahora');
+    }
+
+    /**
      * Volver a montar un libro que ya está en la cola reemplaza el archivo y su
      * estado: vuelve a "en espera" y se borra la observación de la corrida
      * anterior (por ejemplo, una hoja saltada).
@@ -1115,6 +1263,43 @@ class PlanificacionPeriodicaTest extends TestCase
         }
     }
 
+    /**
+     * El libro se marca "procesando ahora" antes de la primera hoja y se cierra
+     * al final: es lo que hace que el detalle del módulo se llene en vivo en vez
+     * de aparecer de golpe cuando el libro termina.
+     */
+    public function test_el_libro_queda_en_curso_mientras_se_procesa(): void
+    {
+        $this->post(route('planificacion.store', absolute: false), [
+            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+        ])->assertSessionHas('exito');
+
+        $enCurso = null;
+
+        // Se mira el registro justo cuando la corrida crea un día: en ese momento
+        // el libro ya tiene que estar marcado y con su fecha de proceso puesta.
+        DailyPlan::created(function () use (&$enCurso) {
+            $enCurso = PlanificacionImportacion::where('archivo', 'semana-1.xlsx')->first();
+        });
+
+        $this->artisan(ImportarPlanificacion::COMANDO)->assertSuccessful();
+
+        $this->assertNotNull($enCurso, 'La corrida no creó ningún día.');
+        $this->assertTrue($enCurso->estaEnCurso());
+        $this->assertSame('Procesando ahora', $enCurso->etiquetaDeEstado());
+        $this->assertNotNull($enCurso->procesado_en);
+        $this->assertGreaterThan(0, $enCurso->hojas_total);
+
+        // Y al terminar queda cerrado, con el estado de verdad y sin hojas de más:
+        // las que se guardaron en el camino son las mismas del cierre.
+        $cerrado = PlanificacionImportacion::where('archivo', 'semana-1.xlsx')->first();
+
+        $this->assertFalse($cerrado->estaEnCurso());
+        $this->assertSame(PlanificacionImportacion::PARCIAL, $cerrado->estado);
+        $this->assertSame($cerrado->hojas_total, $cerrado->hojas()->count());
+        $this->assertSame(1, $cerrado->hojas_saltadas);
+    }
+
     /** La corrida del cron también deja su rastro. */
     public function test_la_corrida_del_cron_tambien_deja_su_log(): void
     {
@@ -1151,6 +1336,8 @@ class PlanificacionPeriodicaTest extends TestCase
             'id="corrida-barra-relleno"',
             'id="corrida-paso"',
             'id="corrida-resultado"',
+            // El cartel de "En vivo": el detalle también se refresca solo.
+            'id="corrida-latido"',
             '¿Desea ejecutar la corrida manual?',
             'la corrida sigue sola',
         ] as $marca) {

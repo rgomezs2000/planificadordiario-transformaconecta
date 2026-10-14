@@ -158,8 +158,11 @@
          4. EL DETALLE DE LA ÚLTIMA CORRIDA
 
          Igual que la cola: en un contenedor propio, con su huella, para que el
-         script lo refresque solo por AJAX sin recargar la página.
+         script lo refresque solo por AJAX sin recargar la página. Mientras hay
+         una corrida, el comando deja acá el libro que está procesando y le va
+         sumando una fila por hoja: la tabla se ve llenar en vivo.
          ================================================================== --}}
+
     <div id="corrida-contenedor" data-huella="{{ $huellaCorrida }}">
         @include('planificacion._corrida')
     </div>
@@ -248,10 +251,15 @@
         {{-- Montar el libro, eliminar de la cola y mantener el módulo al día:
              todo por AJAX y sin recargar la página.
 
-             El refresco automático sólo MIRA. Pide el estado cada 20 segundos
-             (GET /planificacion/estado) y cambia cada bloque únicamente si el
-             servidor devuelve otra huella; no dispara la corrida, que sigue
-             siendo a las 00:00.
+             El refresco automático sólo MIRA. Pide el estado cada LATIDO
+             milisegundos (GET /planificacion/estado) y cambia cada bloque
+             únicamente si el servidor devuelve otra huella; no dispara la
+             corrida, que sigue siendo a las 00:00.
+
+             El latido es siempre el mismo, corra o no la corrida: cuando el
+             comando está trabajando deja el libro que procesa y sus hojas a
+             medida que las termina, así que el detalle se ve llenar en vivo
+             igual que la cola.
 
              Las dos tablas —la cola y el detalle de la última corrida— las
              maneja DataTables: paginado, orden y búsqueda que filtra desde la
@@ -264,7 +272,7 @@
             }
 
             /** Cada cuánto se vuelve a pedir el estado (milisegundos). */
-            var LATIDO = 20000;
+            var LATIDO = 3000;
 
             var $cola = $('#cola-contenedor');
             var $corrida = $('#corrida-contenedor');
@@ -273,6 +281,7 @@
             var $formulario = $archivo.closest('form');
 
             var seleccion = [];          // libros elegidos, aunque cambien de página
+            var temporizador = null;     // el próximo latido
 
             /* ==============================================================
                Los bloques que se refrescan solos
@@ -289,12 +298,15 @@
                     huella: $contenedor.data('huella') || null,
                     filtros: {},
                     busqueda: '',
+                    // Sin orden propio: se respeta el orden en que el servidor
+                    // manda las filas (y, en la corrida, el de las hojas).
+                    orden: [],
                     largo: P.config.tabla.pageLength,
                     pagina: 0
                 };
             }
 
-            /** Guarda filtros, página y búsqueda antes de cambiar la tabla. */
+            /** Guarda filtros, orden, página y búsqueda antes de cambiar la tabla. */
             function recordar(uno) {
                 if (! uno.tabla) {
                     return;
@@ -305,6 +317,7 @@
                 uno.largo = info.length;
                 uno.pagina = info.page;
                 uno.busqueda = uno.tabla.search();
+                uno.orden = uno.tabla.order();
 
                 uno.$contenedor.find('[data-filtro]').each(function () {
                     uno.filtros[$(this).data('filtro')] = $(this).val();
@@ -326,6 +339,9 @@
                     searchDelay: 0,
                     pageLength: uno.largo,
                     displayStart: uno.pagina * uno.largo,
+                    // El orden que tenía puesto: mientras la corrida avanza, la
+                    // tabla se rearma sola y no tiene por qué perderlo.
+                    order: uno.orden,
                     columnDefs: uno.columnDefs,
                     language: uno.idioma
                 });
@@ -449,14 +465,74 @@
                El refresco en vivo
                ============================================================== */
 
-            /** Un latido visual en el cartel de "En vivo". */
-            function latir() {
-                var $aviso = $cola.find('#cola-latido');
+            /** Un latido visual en el cartel de "En vivo" de un bloque. */
+            function latirEn(uno, selector) {
+                var $aviso = uno.$contenedor.find(selector);
 
-                $aviso.addClass('tf-cola__latido--activo');
+                if (! $aviso.length) {
+                    return;
+                }
+
+                $aviso.addClass('tf-envivo--activo');
                 window.setTimeout(function () {
-                    $aviso.removeClass('tf-cola__latido--activo');
+                    $aviso.removeClass('tf-envivo--activo');
                 }, 900);
+            }
+
+            /**
+             * Qué campo del bloque tenía el foco y dónde estaba el cursor.
+             *
+             * Mientras la corrida avanza, la tabla se rearma cada pocos segundos.
+             * Sin esto, escribir en un filtro sería imposible: el campo se
+             * recrearía y el foco se perdería en cada refresco.
+             */
+            function recordarFoco(uno) {
+                var $campo = uno.$contenedor.find(':focus');
+
+                // Sólo los campos de texto y las listas: una casilla de la cola no
+                // tiene por qué recuperar el foco después de un refresco.
+                if (! $campo.length || ! $campo.is('input[type="search"], input[type="text"], select')) {
+                    return null;
+                }
+
+                return {
+                    // El filtro por columna se reconoce por su índice; el buscador
+                    // general y el "mostrar N registros", por dónde viven.
+                    filtro: $campo.data('filtro'),
+                    busqueda: $campo.closest('.dt-search').length > 0,
+                    cursor: typeof $campo[0].selectionStart === 'number' ? $campo[0].selectionStart : null
+                };
+            }
+
+            /** Devuelve el foco al mismo campo (y al mismo lugar del texto). */
+            function devolverFoco(uno, foco) {
+                if (! foco) {
+                    return;
+                }
+
+                var $campo;
+
+                if (foco.filtro !== undefined) {
+                    $campo = uno.$contenedor.find('[data-filtro="' + foco.filtro + '"]');
+                } else if (foco.busqueda) {
+                    $campo = uno.$contenedor.find('.dt-search input').first();
+                } else {
+                    $campo = uno.$contenedor.find('.dt-length select').first();
+                }
+
+                if (! $campo.length) {
+                    return;
+                }
+
+                $campo.trigger('focus');
+
+                if (foco.cursor !== null && $campo[0].setSelectionRange) {
+                    try {
+                        $campo[0].setSelectionRange(foco.cursor, foco.cursor);
+                    } catch (error) {
+                        // El campo no acepta el cursor (un select, por ejemplo).
+                    }
+                }
             }
 
             /** Cambia el bloque sólo si su huella es otra. Devuelve si cambió. */
@@ -469,6 +545,8 @@
 
                 recordar(uno);
 
+                var foco = recordarFoco(uno);
+
                 if (uno.tabla) {
                     uno.tabla.destroy();
                     uno.tabla = null;
@@ -477,8 +555,18 @@
                 uno.$contenedor.html(datos.html);
 
                 armar(uno);
+                devolverFoco(uno, foco);
 
                 return true;
+            }
+
+            /** Vuelve a pedir el estado dentro de `espera` milisegundos. */
+            function programar(espera) {
+                if (temporizador) {
+                    window.clearTimeout(temporizador);
+                }
+
+                temporizador = window.setTimeout(refrescar, espera);
             }
 
             /**
@@ -488,6 +576,8 @@
              */
             function refrescar() {
                 if (document.hidden) {
+                    programar(LATIDO);
+
                     return;
                 }
 
@@ -514,11 +604,14 @@
                     if (cambioLaCola) {
                         aplicarSeleccion();
                         actualizar();
+                        latirEn(enCola, '#cola-latido');
                     }
 
-                    if (cambioLaCola || cambioLaCorrida) {
-                        latir();
+                    if (cambioLaCorrida) {
+                        latirEn(enCorrida, '#corrida-latido');
                     }
+                }).always(function () {
+                    programar(LATIDO);
                 });
             }
 
@@ -526,7 +619,7 @@
             armar(enCorrida);
             actualizar();
 
-            window.setInterval(refrescar, LATIDO);
+            programar(LATIDO);
 
             // Al volver a la pestaña se mira enseguida.
             document.addEventListener('visibilitychange', function () {
@@ -782,6 +875,10 @@
                 detenerReloj();
                 relojCorrida = window.setInterval(seguirCorrida, 1000);
                 seguirCorrida();
+
+                // La corrida arranca: se mira el estado enseguida, sin esperar al
+                // próximo latido, para que el detalle se empiece a llenar ya.
+                refrescar();
             }
 
             // El botón: confirma con bootbox y arranca la corrida.

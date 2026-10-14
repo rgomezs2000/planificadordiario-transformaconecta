@@ -511,6 +511,11 @@ class ImportarPlanificacion extends Command
      * Va hoja por hoja para poder mostrar el progreso de la corrida y anotar cada
      * observación en el log a medida que aparece.
      *
+     * El registro del libro no se guarda al final: se abre antes de la primera
+     * hoja y se va completando con cada una. Así el módulo muestra el detalle de
+     * la corrida **en vivo**, llenándose hoja por hoja, en vez de aparecer de
+     * golpe cuando el libro termina.
+     *
      * @return array{creados: int, errores: int}
      */
     private function procesar(array $libro, array $lectura): array
@@ -519,49 +524,63 @@ class ImportarPlanificacion extends Command
         $errores = 0;
         $hojas = [];
 
-        foreach ($lectura['hojas'] as $hoja) {
-            $fila = $this->procesarHoja($libro, $hoja);
+        $registro = $this->abrirElRegistro($libro, $lectura);
 
-            $hojas[] = $fila;
+        try {
+            foreach ($lectura['hojas'] as $hoja) {
+                $fila = $this->procesarHoja($libro, $hoja);
 
-            if ($fila['accion'] === PlanificacionHoja::CREADO) {
-                $creados++;
-            }
+                $hojas[] = $fila;
 
-            if ($fila['accion'] === PlanificacionHoja::ERROR) {
-                $errores++;
-            }
-
-            $this->contadores[match ($fila['accion']) {
-                PlanificacionHoja::CREADO => 'creados',
-                PlanificacionHoja::OMITIDO => 'omitidos',
-                PlanificacionHoja::SALTADO => 'saltados',
-                PlanificacionHoja::IGNORADO => 'ignorados',
-                default => 'errores',
-            }]++;
-
-            // Lo que hay que revisar: una hoja saltada, un error, o un día que
-            // entró pero con algún aviso.
-            if ($fila['accion'] === PlanificacionHoja::SALTADO || $fila['accion'] === PlanificacionHoja::ERROR) {
-                $this->observaciones[] = $this->enPalabras($fila).': '.$fila['motivo'];
-            }
-
-            if (in_array($fila['accion'], [PlanificacionHoja::CREADO, PlanificacionHoja::OMITIDO], true)) {
-                foreach ($hoja['avisos'] as $aviso) {
-                    $this->observaciones[] = $this->enPalabras($fila).': '.$aviso;
+                if ($fila['accion'] === PlanificacionHoja::CREADO) {
+                    $creados++;
                 }
+
+                if ($fila['accion'] === PlanificacionHoja::ERROR) {
+                    $errores++;
+                }
+
+                $this->contadores[match ($fila['accion']) {
+                    PlanificacionHoja::CREADO => 'creados',
+                    PlanificacionHoja::OMITIDO => 'omitidos',
+                    PlanificacionHoja::SALTADO => 'saltados',
+                    PlanificacionHoja::IGNORADO => 'ignorados',
+                    default => 'errores',
+                }]++;
+
+                // Lo que hay que revisar: una hoja saltada, un error, o un día que
+                // entró pero con algún aviso.
+                if ($fila['accion'] === PlanificacionHoja::SALTADO || $fila['accion'] === PlanificacionHoja::ERROR) {
+                    $this->observaciones[] = $this->enPalabras($fila).': '.$fila['motivo'];
+                }
+
+                if (in_array($fila['accion'], [PlanificacionHoja::CREADO, PlanificacionHoja::OMITIDO], true)) {
+                    foreach ($hoja['avisos'] as $aviso) {
+                        $this->observaciones[] = $this->enPalabras($fila).': '.$aviso;
+                    }
+                }
+
+                // La hoja queda guardada (y los contadores al día) antes de
+                // seguir con la próxima: es lo que el módulo ve en vivo.
+                $this->anotarLaHoja($registro, $fila, $hojas);
+
+                $this->avanzar($libro['nombre'].' · '.$this->enPalabras($fila).' · '.$this->etiquetaDeAccion($fila['accion']));
             }
 
-            $this->avanzar($libro['nombre'].' · '.$this->enPalabras($fila).' · '.$this->etiquetaDeAccion($fila['accion']));
+            // Qué fechas tiene el libro y cuáles siguen sin estar en la base.
+            $fechas = array_values(array_filter(array_column($hojas, 'fecha')));
+            $faltan = $this->faltantes($fechas);
+            $enBdHasta = $this->enBdHasta($fechas);
+            $estado = $this->estado($lectura, $hojas, $faltan);
+        } catch (Throwable $e) {
+            // Si algo se rompe en el medio, el libro no puede quedar "en curso"
+            // para siempre: vuelve a la cola con lo que alcanzó a hacer.
+            $this->abandonarElRegistro($registro, $e);
+
+            throw $e;
         }
 
-        // Qué fechas tiene el libro y cuáles siguen sin estar en la base.
-        $fechas = array_values(array_filter(array_column($hojas, 'fecha')));
-        $faltan = $this->faltantes($fechas);
-        $enBdHasta = $this->enBdHasta($fechas);
-        $estado = $this->estado($lectura, $hojas, $faltan);
-
-        $registro = $this->registrar($libro, $lectura, $hojas, $faltan, $enBdHasta, $estado);
+        $registro = $this->cerrarElRegistro($registro, $lectura, $hojas, $faltan, $enBdHasta, $estado);
 
         $this->mover($libro, $estado);
 
@@ -645,33 +664,35 @@ class ImportarPlanificacion extends Command
         };
     }
 
-    /** Guarda (o reemplaza) el registro del libro y el detalle de sus hojas. */
-    private function registrar(
-        array $libro,
-        array $lectura,
-        array $hojas,
-        array $faltan,
-        ?string $enBdHasta,
-        string $estado
-    ): PlanificacionImportacion {
+    /**
+     * Abre el registro del libro: lo deja marcado como el que está corriendo.
+     *
+     * Se guarda **antes** de la primera hoja a propósito. El módulo muestra como
+     * "última corrida" el libro con el `procesado_en` más nuevo, así que marcarlo
+     * acá es lo que hace que el detalle se vea llenar en vivo, hoja por hoja, en
+     * vez de aparecer de golpe al final. También borra el detalle de la corrida
+     * anterior: lo que se ve es esta corrida, no la de ayer.
+     */
+    private function abrirElRegistro(array $libro, array $lectura): PlanificacionImportacion
+    {
         $registro = PlanificacionImportacion::firstOrNew(['archivo' => $libro['nombre']]);
 
         $registro->fill([
             'periodo_desde' => $lectura['desde'],
             'periodo_hasta' => $lectura['hasta'],
-            'estado' => $estado,
-            'hojas_total' => count($hojas),
-            'hojas_creadas' => $this->contar($hojas, PlanificacionHoja::CREADO),
-            'hojas_omitidas' => $this->contar($hojas, PlanificacionHoja::OMITIDO),
-            'hojas_saltadas' => $this->contar($hojas, PlanificacionHoja::SALTADO),
-            'hojas_ignoradas' => $this->contar($hojas, PlanificacionHoja::IGNORADO),
-            'hojas_error' => $this->contar($hojas, PlanificacionHoja::ERROR),
-            'cubierto_hasta' => $faltan === [] ? $lectura['hasta'] : $lectura['cubierto_hasta'],
-            'en_bd_hasta' => $enBdHasta,
-            'dias_sin_hoja' => count($lectura['sin_hoja']),
+            'estado' => PlanificacionImportacion::EN_CURSO,
+            'hojas_total' => count($lectura['hojas']),
+            'hojas_creadas' => 0,
+            'hojas_omitidas' => 0,
+            'hojas_saltadas' => 0,
+            'hojas_ignoradas' => 0,
+            'hojas_error' => 0,
+            'cubierto_hasta' => null,
+            'en_bd_hasta' => null,
+            'dias_sin_hoja' => 0,
             'procesado_en' => Helper::now(),
             'descartado_en' => null,
-            'mensaje' => $this->mensaje($estado, $faltan),
+            'mensaje' => 'La corrida lo está procesando ahora: el detalle se llena hoja por hoja.',
         ]);
 
         // La fecha de la subida se respeta: sólo se pone la primera vez.
@@ -680,14 +701,95 @@ class ImportarPlanificacion extends Command
         }
 
         $registro->save();
-
         $registro->hojas()->delete();
 
-        foreach ($hojas as $hoja) {
-            $registro->hojas()->create($hoja);
-        }
+        return $registro;
+    }
+
+    /**
+     * Guarda una hoja del libro y deja los contadores al día.
+     *
+     * Es lo que el módulo lee para ir llenando la tabla del detalle: se llama una
+     * vez por hoja, sin esperar a que el libro termine.
+     *
+     * @param  list<array>  $hojas  las hojas procesadas hasta ahora
+     */
+    private function anotarLaHoja(PlanificacionImportacion $registro, array $fila, array $hojas): void
+    {
+        $registro->hojas()->create($fila);
+
+        $registro->fill($this->contadoresDeLasHojas($hojas))->save();
+    }
+
+    /**
+     * Cierra el registro: el estado final del libro, su período y hasta dónde
+     * quedó cubierto. Las hojas ya están guardadas desde `anotarLaHoja()`.
+     *
+     * @param  list<array>  $hojas
+     * @param  list<string>  $faltan
+     */
+    private function cerrarElRegistro(
+        PlanificacionImportacion $registro,
+        array $lectura,
+        array $hojas,
+        array $faltan,
+        ?string $enBdHasta,
+        string $estado
+    ): PlanificacionImportacion {
+        $registro->fill(array_merge($this->contadoresDeLasHojas($hojas), [
+            'periodo_desde' => $lectura['desde'],
+            'periodo_hasta' => $lectura['hasta'],
+            'estado' => $estado,
+            'cubierto_hasta' => $faltan === [] ? $lectura['hasta'] : $lectura['cubierto_hasta'],
+            'en_bd_hasta' => $enBdHasta,
+            'dias_sin_hoja' => count($lectura['sin_hoja']),
+            // La hora del cierre es la que el módulo muestra como "procesado".
+            'procesado_en' => Helper::now(),
+            'descartado_en' => null,
+            'mensaje' => $this->mensaje($estado, $faltan),
+        ]));
+
+        $registro->save();
 
         return $registro;
+    }
+
+    /**
+     * El libro se cortó a medias: vuelve a la cola con lo que alcanzó a hacer.
+     *
+     * Sin esto, un error en el medio dejaría el libro como "procesando ahora"
+     * para siempre. Así queda parcial, se reintenta en la corrida siguiente y el
+     * detalle de lo que sí se hizo no se pierde.
+     */
+    private function abandonarElRegistro(PlanificacionImportacion $registro, Throwable $e): void
+    {
+        try {
+            $registro->fill([
+                'estado' => PlanificacionImportacion::PARCIAL,
+                'mensaje' => 'La corrida se cortó a medias: '.$e->getMessage(),
+            ])->save();
+        } catch (Throwable $otro) {
+            // Si ni el registro se puede guardar, manda el error de verdad.
+            report($otro);
+        }
+    }
+
+    /**
+     * Los contadores del libro, contados sobre las hojas procesadas hasta ahora.
+     *
+     * @param  list<array>  $hojas
+     * @return array<string, int>
+     */
+    private function contadoresDeLasHojas(array $hojas): array
+    {
+        return [
+            'hojas_total' => count($hojas),
+            'hojas_creadas' => $this->contar($hojas, PlanificacionHoja::CREADO),
+            'hojas_omitidas' => $this->contar($hojas, PlanificacionHoja::OMITIDO),
+            'hojas_saltadas' => $this->contar($hojas, PlanificacionHoja::SALTADO),
+            'hojas_ignoradas' => $this->contar($hojas, PlanificacionHoja::IGNORADO),
+            'hojas_error' => $this->contar($hojas, PlanificacionHoja::ERROR),
+        ];
     }
 
     /** Cuántas hojas terminaron con esa acción. */

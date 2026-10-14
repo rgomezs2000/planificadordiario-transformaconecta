@@ -2139,8 +2139,10 @@ textarea.form-control {
     text-transform: none;
 }
 
-/* El cartel de "En vivo": late cada vez que la cola se refresca sola. */
-.tf-cola__latido {
+/* El cartel de "En vivo": late cada vez que un bloque se refresca solo.
+   Lo usan la cola (dentro de su barra de acciones) y el detalle de la última
+   corrida (dentro del título): en los dos casos va corrido a la derecha. */
+.tf-envivo {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -2152,8 +2154,13 @@ textarea.form-control {
     text-transform: uppercase;
 }
 
-.tf-cola__latido--activo i {
+.tf-envivo--activo i {
     animation: tf-latido 900ms ease-in-out;
+}
+
+/* Dentro de un título, el icono no lleva el naranja de los demás. */
+.tf-titulo .tf-envivo i {
+    color: inherit;
 }
 
 @keyframes tf-latido {

@@ -9,14 +9,18 @@
     por qué: una DataTable con un filtro por columna y la búsqueda general, que
     filtra desde la primera letra.
 
-    El bloque se vuelve a pedir solo por AJAX (dentro del estado del módulo).
+    Este bloque se refresca solo por AJAX (dentro del estado del módulo), igual
+    que la cola, y **en vivo**: mientras el comando está corriendo, el libro que
+    se está procesando es el que sale acá y sus hojas van apareciendo una por
+    una. El módulo lo vuelve a pedir cada pocos segundos (ver `index.blade.php`).
 
-    Necesita: $ultima, $hojasDeLaUltima y $enCola.
+    Necesita: $ultima, $hojasDeLaUltima, $enCola y $enCurso.
     ==========================================================================
 --}}
 @php
     $acciones = \App\Models\PlanificacionHoja::ACCIONES;
     $enCola = $enCola ?? 0;
+    $enCurso = $enCurso ?? false;
 
     // Lo que quedó pendiente: es lo que hace falta para que el botón tenga sentido.
     $pendientes = [];
@@ -38,6 +42,14 @@
     <h3 class="tf-titulo">
         <i class="bi bi-list-check" aria-hidden="true"></i>
         Detalle de la última corrida
+
+        {{-- El detalle se refresca solo por AJAX, igual que la cola: el cartel
+             late cada vez que la tabla cambia (mientras la corrida corre, hoja
+             por hoja). --}}
+        <span class="tf-envivo" id="corrida-latido" title="El detalle se actualiza solo">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+            En vivo
+        </span>
     </h3>
 
     {{-- Correr a mano, sin esperar a las 00:00. --}}
@@ -66,8 +78,13 @@
 
     @if (! $ultima)
         <p class="tf-ayuda">
-            Todavía no corrió ninguna vez. El detalle aparece después de la corrida de las 00:00
-            (o de una corrida a mano).
+            @if ($enCurso)
+                La corrida arrancó: todavía no terminó la primera hoja. El detalle va a ir
+                apareciendo acá, hoja por hoja, sin recargar la página.
+            @else
+                Todavía no corrió ninguna vez. El detalle aparece después de la corrida de las 00:00
+                (o de una corrida a mano).
+            @endif
         </p>
     @else
         <div class="tf-planificacion__cifras mb-2">

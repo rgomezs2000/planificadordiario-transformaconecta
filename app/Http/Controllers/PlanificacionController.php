@@ -79,7 +79,10 @@ class PlanificacionController extends Controller
      * El detalle de la última corrida, ya armado: los datos, su HTML y la huella.
      *
      * Es la tabla que muestra, hoja por hoja, qué hizo la última corrida (creado,
-     * ya estaba, saltado, ignorado o con error) y por qué.
+     * ya estaba, saltado, ignorado o con error) y por qué. Mientras una corrida
+     * está en curso, el libro que se está procesando es el que sale acá: el
+     * comando lo marca antes de la primera hoja y le va sumando filas, así el
+     * módulo lo ve llenarse en vivo.
      *
      * @return array{datos: array, html: string, huella: string}
      */
@@ -93,11 +96,33 @@ class PlanificacionController extends Controller
             // Cuántos libros hay en la cola: con eso el bloque decide si el botón
             // de "Ejecutar corrida" sirve o no.
             'enCola' => count(ArchivosDePlanificacion::librosEnCola()),
+            // ¿La corrida arrancó y todavía no cerró ningún libro? Sólo hace falta
+            // cuando no hay ninguno procesado: es el aviso de que el detalle está
+            // por aparecer.
+            'enCurso' => $ultima === null && $this->hayCorridaEnCurso(),
         ];
 
         $html = view('planificacion._corrida', $datos)->render();
 
         return ['datos' => $datos, 'html' => $html, 'huella' => md5($html)];
+    }
+
+    /**
+     * ¿El comando está corriendo en este momento?
+     *
+     * Se mira el archivo que escribe la corrida, con la misma regla que la barra
+     * de progreso: si quedó "en curso" y hace rato que no da señales, el proceso
+     * ya no está y no se cuenta como corrida viva.
+     */
+    private function hayCorridaEnCurso(): bool
+    {
+        $estado = ArchivosDePlanificacion::estadoDeLaCorrida();
+
+        if (($estado['estado'] ?? null) !== 'en_curso') {
+            return false;
+        }
+
+        return ! ArchivosDePlanificacion::laCorridaSeInterrumpio();
     }
 
     /**

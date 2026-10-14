@@ -44,7 +44,7 @@
 
             <span class="tf-planificacion__motivo" id="cola-cuenta">Ningún libro seleccionado</span>
 
-            <span class="tf-cola__latido" id="cola-latido" title="La cola se actualiza sola">
+            <span class="tf-envivo" id="cola-latido" title="La cola se actualiza sola">
                 <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
                 En vivo
             </span>

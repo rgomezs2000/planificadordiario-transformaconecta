@@ -25,6 +25,15 @@ class PlanificacionImportacion extends Model
     /* Los estados posibles del libro. */
     public const EN_ESPERA = 'en_espera';
 
+    /**
+     * La corrida lo está procesando en este mismo momento.
+     *
+     * Dura lo que dura el libro en la corrida: la primera hoja lo deja en este
+     * estado y el cierre le pone el definitivo (procesado, parcial o error). Es
+     * lo que hace que el módulo muestre el detalle llenándose en vivo.
+     */
+    public const EN_CURSO = 'en_curso';
+
     public const PROCESADO = 'procesado';
 
     public const PARCIAL = 'parcial';
@@ -36,6 +45,7 @@ class PlanificacionImportacion extends Model
     /** Etiqueta y color de cada estado, para el módulo. */
     public const ESTADOS = [
         self::EN_ESPERA => ['etiqueta' => 'En espera de la corrida', 'color' => 'naranja'],
+        self::EN_CURSO => ['etiqueta' => 'Procesando ahora', 'color' => 'azul'],
         self::PROCESADO => ['etiqueta' => 'Procesado', 'color' => 'turquesa'],
         self::PARCIAL => ['etiqueta' => 'Parcial', 'color' => 'naranja'],
         self::ERROR => ['etiqueta' => 'Error', 'color' => 'rojo'],
@@ -149,6 +159,12 @@ class PlanificacionImportacion extends Model
         return max(0, $this->hojas_saltadas);
     }
 
+    /** ¿La corrida lo está procesando ahora mismo? */
+    public function estaEnCurso(): bool
+    {
+        return $this->estado === self::EN_CURSO;
+    }
+
     /** El resumen de la última corrida, en una línea. */
     public function resumenEnPalabras(): string
     {
@@ -168,6 +184,14 @@ class PlanificacionImportacion extends Model
             if ($this->{$campo} > 0) {
                 $partes[] = $this->{$campo}.' '.$etiqueta.($this->{$campo} === 1 ? '' : 's');
             }
+        }
+
+        // Mientras corre, los contadores van subiendo con cada hoja: el módulo
+        // los muestra así, en vez de esperar al resumen final.
+        if ($this->estaEnCurso()) {
+            return $partes === []
+                ? 'La corrida lo está procesando ahora.'
+                : 'Procesando: '.Helper::listToText($partes);
         }
 
         return $partes === [] ? 'Sin hojas que mirar.' : Helper::listToText($partes);

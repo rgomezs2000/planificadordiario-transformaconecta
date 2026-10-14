@@ -407,8 +407,9 @@ parecen campos comunes. Está cubierto por una prueba.
 `/planificacion/plantilla` y las de período por su nombre), **montar un libro sin recargar la
 página**, ver la cola con el estado y el resultado de cada uno, **eliminar de la cola uno o varios
 libros a la vez** (se seleccionan con casillas, se confirma con bootbox y se van a `descartados/`),
-ver el detalle de la última corrida (hoja por hoja, con el motivo de cada salto) y **quitar un libro
-de la cola** desde su fila. El módulo **solo guarda**: no procesa nada.
+ver el detalle de la última corrida (hoja por hoja, con el motivo de cada salto, **en vivo** mientras
+la corrida trabaja) y **quitar un libro de la cola** desde su fila. El módulo **solo guarda**: no
+procesa nada.
 
 **Todo el módulo trabaja por AJAX.** Montar el libro, quitarlo de la cola (de a uno o en lote) y
 refrescar la lista no recargan la página: el formulario viaja con `FormData`, el servidor contesta
@@ -425,12 +426,21 @@ anterior en la cola y su estado vuelve a **en espera**: se borra el detalle de l
 corregir un libro que quedó a medias: se arregla el Excel, se monta otra vez y la corrida siguiente
 lo toma entero (los días que ya estén en la base se omiten como siempre).
 
-**El estado se mantiene al día solo.** Cada 20 segundos el módulo vuelve a pedir el estado de los
-dos bloques (y también al volver a la pestaña) y **sólo cambia la pantalla si algo cambió**: el
-servidor devuelve una **huella** de cada bloque y, si es la misma, no se toca el DOM. El refresco
-**sólo mira**: no dispara la corrida, que sigue siendo a las 00:00 y sólo a esa hora. Al cambiar una
-tabla se conservan sus filtros, su página y —en la cola— los libros que estaban seleccionados, y el
-cartel **En vivo** late como aviso.
+**El estado se mantiene al día solo.** Cada 3 segundos el módulo vuelve a pedir el estado de los dos
+bloques (y también al volver a la pestaña) y **sólo cambia la pantalla si algo cambió**: el servidor
+devuelve una **huella** de cada bloque y, si es la misma, no se toca el DOM. El refresco **sólo
+mira**: no dispara la corrida, que sigue siendo a las 00:00 y sólo a esa hora. Al cambiar una tabla
+se conservan sus filtros, su página, su orden y —en la cola— los libros que estaban seleccionados, y
+el cartel **En vivo** late como aviso. Con la pestaña en segundo plano no se pide nada: el latido
+espera a que vuelvas.
+
+**El detalle de la corrida se llena en vivo.** El latido es el mismo corra o no la corrida, y el
+comando deja el libro que está procesando en el mismo lugar que "la última corrida": lo marca como
+**procesando ahora** antes de su primera hoja y le va sumando una fila por cada hoja que termina.
+Así la tabla del detalle se llena sola, hoja por hoja, en vez de aparecer de golpe cuando el libro
+termina; el porcentaje fino sigue en el modal de la corrida. Si la corrida se cortara en el medio,
+el libro queda **parcial** con lo que alcanzó a hacer y se reintenta en la corrida siguiente (nunca
+se queda "procesando ahora" para siempre).
 
 **Las dos tablas son DataTables** (paginado 5/10/25/50/100, orden por columna, buscador que filtra
 **desde la primera letra** y pie de registros) y cada una tiene su **fila de filtros por columna**,
@@ -443,7 +453,7 @@ En la **cola de libros**:
 | Palabra clave (el buscador de DataTables) | Todo el libro: nombre, período, estado, fechas y resultado |
 | Nombre del libro | Solo la columna del libro |
 | Período | El período que cubre ("1 al 31 de octubre de 2026") |
-| Estado | Una de las cinco etiquetas: en espera de la corrida, procesado, parcial, error o descartado (lista) |
+| Estado | Una de las seis etiquetas: en espera de la corrida, procesando ahora, procesado, parcial, error o descartado (lista) |
 | Cubierto hasta | La fecha hasta la que está cubierto sin huecos |
 | Última corrida | La fecha y hora de la última corrida |
 | Qué pasó | El resumen de la última corrida |
@@ -480,7 +490,8 @@ Al pulsarlo:
 3. Al llegar al 100 % muestra el **resultado**: verde si se completó, amarillo si quedó **con
    observaciones** (con la lista de lo que se saltó y por qué) o rojo si hubo **errores**, con el
    resumen de creados, ya estaban, saltados, ignorados y errores.
-4. Al cerrar, el módulo se actualiza solo (la cola y el detalle).
+4. Mientras tanto, el **detalle de la última corrida** (abajo) se va llenando solo, hoja por hoja, y
+   al cerrar el módulo queda actualizado del todo (la cola y el detalle).
 
 La corrida **arranca en segundo plano**: el comando corre despegado de la petición, así que se
 puede cerrar el modal o incluso el navegador y la corrida sigue. Las reglas son **exactamente las
@@ -743,6 +754,7 @@ Montarla en /planificacion  ──►  queda «en espera» (no se procesa nada t
         │
         ▼
 00:00  ──►  planificacion:importar
+              · marca el libro que procesa y el módulo ve el detalle llenarse en vivo
               · omite los días que ya están en la base
               · crea los que faltan (pasado, hoy y futuro)
               · salta las hojas incompletas y las anota con el motivo
@@ -829,7 +841,7 @@ con `novalidate` para controlar los mensajes con el estilo propio.
 | Días ya cargados | Se **omiten** (no se actualizan ni se pisan). Vale para pasado, hoy y futuro |
 | Días eliminados | Vuelven a crearse en la corrida siguiente con lo que traiga el libro. Para que no vuelvan, hay que quitar la hoja del Excel y sacar el libro de la cola |
 | Días que el libro no trae | Si un día pasado del período no está en el libro ni en la base, se informa como aviso (no es un error) |
-| Estado del libro | `en espera`, `procesado` (todas sus fechas cargadas), `parcial` (quedó alguna saltada), `error` (no se pudo leer) o `descartado` |
+| Estado del libro | `en espera`, `en curso` (la corrida lo está procesando ahora mismo), `procesado` (todas sus fechas cargadas), `parcial` (quedó alguna saltada o la corrida se cortó), `error` (no se pudo leer) o `descartado` |
 | Solo base de datos | La corrida **no genera documentos**: el PDF y la imagen se arman cuando se piden |
 
 ### 7.4 Invariantes del modelo de datos
@@ -1766,7 +1778,7 @@ librería.
 | --- | --- |
 | `tests/Unit/ExampleTest.php` | Prueba unitaria de ejemplo |
 | `tests/Feature/ExampleTest.php` | La portada responde 200 |
-| `tests/Feature/PlanificacionPeriodicaTest.php` | **40 pruebas**: la planilla (hojas, etiquetas, protección, celdas escribibles, listas desplegables con su flecha y la planilla de un período con una hoja por día), la corrida (crea solo lo que falta, **lee los campos que se eligen de una lista**, **lee los valores nativos de Excel**, no pisa un día cargado, vuelve a crear un día eliminado, salta la hoja sin cierre, ignora `INSTRUCCIONES` y `LISTAS`), el modo `--dry-run` (no escribe nada) y el módulo (abrir, descargar la planilla genérica y la de un período, montar por AJAX, **volver a montar el mismo nombre y comprobar que reemplaza el libro, el estado y los contadores**, quitar de la cola de a uno y en lote, **pedir la cola y el detalle de la última corrida por AJAX con sus huellas**, dibujar una fila ya corrida y el acceso desde el inicio) |
+| `tests/Feature/PlanificacionPeriodicaTest.php` | **44 pruebas**: la planilla (hojas, etiquetas, protección, celdas escribibles, listas desplegables con su flecha y la planilla de un período con una hoja por día), la corrida (crea solo lo que falta, **lee los campos que se eligen de una lista**, **lee los valores nativos de Excel**, no pisa un día cargado, vuelve a crear un día eliminado, salta la hoja sin cierre, **deja el libro «procesando ahora» mientras trabaja y lo cierra al terminar**, ignora `INSTRUCCIONES` y `LISTAS`), el modo `--dry-run` (no escribe nada) y el módulo (abrir, descargar la planilla genérica y la de un período, montar por AJAX, **volver a montar el mismo nombre y comprobar que reemplaza el libro, el estado y los contadores**, quitar de la cola de a uno y en lote, **pedir la cola y el detalle de la última corrida por AJAX con sus huellas**, **ver el detalle llenarse hoja por hoja mientras la corrida corre**, dibujar una fila ya corrida y el acceso desde el inicio) |
 
 ### 18.2 Cómo corren
 
@@ -1864,6 +1876,7 @@ vendor/bin/pint             # corrige
 | **Checkpoint** | Hasta qué fecha el período está cubierto sin huecos y hasta dónde hay días cargados por adelantado |
 | **Dry-run** | `--dry-run`: muestra qué haría la corrida sin escribir en la base ni mover archivos |
 | **Libro descartado** | Un libro que se sacó de la cola a mano: no vuelve a procesarse |
+| **Procesando ahora** | El libro que la corrida está trabajando en este momento: el detalle de la corrida se llena con sus hojas, en vivo |
 
 ---
 
