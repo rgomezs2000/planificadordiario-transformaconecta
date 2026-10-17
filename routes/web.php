@@ -6,6 +6,7 @@ use App\Http\Controllers\ErrorController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PlanificacionController;
 use Illuminate\Support\Facades\Route;
+use Kreait\Firebase\Factory;
 
 /*
 |--------------------------------------------------------------------------
@@ -107,4 +108,27 @@ Route::prefix('planificacion')->name('planificacion.')->group(function () {
     Route::delete('/{archivo}', [PlanificacionController::class, 'descartar'])
         ->where('archivo', '[A-Za-z0-9._-]+')
         ->name('descartar');
+});
+
+Route::get('/test-firebase', function () {
+    try {
+        // Inicializamos Firebase apuntando directamente al archivo JSON de la raíz
+        $firebase = (new Factory)
+            ->withServiceAccount(base_path('firebase-credentials.json'));
+
+        // Creamos la instancia del servicio de mensajería (notificaciones)
+        $messaging = $firebase->createMessaging();
+
+        return response()->json([
+            'status' => '¡Conexión Exitosa!',
+            'mensaje' => 'El planificador diario ya se comunica con Firebase de manera nativa.',
+            'clase_motor' => get_class($messaging)
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'Error de conexión',
+            'detalles' => $e->getMessage()
+        ], 500);
+    }
 });
