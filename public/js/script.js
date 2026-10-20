@@ -15,7 +15,8 @@
      3. Casillas que habilitan su campo de texto múltiple
      4. Botón limpiar
      5. Validación de los campos obligatorios y mensajes bajo el formulario
-   6. Guardado por AJAX, con confirmación antes de registrar el diario
+     6. Guardado por AJAX, con confirmación antes de registrar el diario
+     7. Cumplimiento del horario por AJAX en la vista de sólo lectura
    ========================================================================== */
 
 window.Planificador = window.Planificador || {};
@@ -36,6 +37,7 @@ window.Planificador = window.Planificador || {};
             selectorQuitar: '.tf-horario__quitar',
             selectorTodos: '#horario-todos',
             selectorCheckFila: '.tf-horario__check',
+            selectorGuardarHorario: '#horario-guardar',
             selectorHabilita: '[data-tf-habilita]',
             selectorLimpiar: '#formulario-limpiar',
             selectorGuardar: '#formulario-guardar',
@@ -77,6 +79,10 @@ window.Planificador = window.Planificador || {};
                 this.iniciarValidacion();
                 this.iniciarGuardado();
                 this.sincronizarDetalles();
+            } else {
+                // En la vista de sólo lectura las únicas casillas activas son
+                // las del horario, y se guardan con el botón de la sección.
+                this.iniciarCumplimiento();
             }
 
             return this;
@@ -183,6 +189,9 @@ window.Planificador = window.Planificador || {};
             });
 
             this.actualizarVacio();
+            // La cabecera arranca marcada o a medias según lo que ya estaba
+            // cumplido, también en la vista de sólo lectura.
+            this.sincronizarTodos();
         },
 
         /** Copia la plantilla, le pone el número de fila y la agrega al final. */
@@ -226,6 +235,172 @@ window.Planificador = window.Planificador || {};
             var filas = $(this.opciones.selectorTabla).find('tr').not('[id="horario-vacio"]').length;
 
             $(this.opciones.selectorVacio).toggle(filas === 0);
+        },
+
+        /* ==================================================================
+           2 bis. Cumplimiento del horario (vista de sólo lectura)
+           ================================================================== */
+
+        /**
+         * Enlaza el botón del final de la sección. Al pulsarlo se pide una
+         * confirmación con bootbox; si se cancela no pasa nada y, si se
+         * acepta, las casillas se guardan por AJAX contra el controlador del
+         * diario. La respuesta se muestra en otra alerta: el éxito con el
+         * mensaje del servidor o el error con su causa.
+         */
+        iniciarCumplimiento: function () {
+            var self = this;
+
+            $(this.opciones.selectorGuardarHorario)
+                .off('click.pfCumplimiento')
+                .on('click.pfCumplimiento', function (evento) {
+                    evento.preventDefault();
+                    self.confirmarCumplimiento($(this));
+                });
+        },
+
+        /** Las franjas que hay ahora mismo en la tabla, con su estado. */
+        franjasDelHorario: function () {
+            var self = this;
+            var franjas = [];
+
+            $(this.opciones.selectorTabla).find('tr').not('[id="horario-vacio"]').each(function () {
+                var $fila = $(this);
+                var id = parseInt($fila.find('input[name$="[id]"]').val(), 10);
+
+                if (! id) {
+                    return;
+                }
+
+                franjas.push({
+                    id: id,
+                    is_done: $fila.find(self.opciones.selectorCheckFila).is(':checked') ? 1 : 0
+                });
+            });
+
+            return franjas;
+        },
+
+        /** Cuenta lo que se va a guardar y pide la confirmación. */
+        confirmarCumplimiento: function ($boton) {
+            var self = this;
+            var franjas = this.franjasDelHorario();
+
+            if (! franjas.length) {
+                P.Alerta.info('Este diario no tiene franjas en el horario para marcar.');
+
+                return this;
+            }
+
+            var cumplidas = $.grep(franjas, function (franja) {
+                return franja.is_done === 1;
+            }).length;
+            var sinCumplir = franjas.length - cumplidas;
+            var total = franjas.length === 1 ? '1 franja' : franjas.length + ' franjas';
+            var marcadas = cumplidas === 1
+                ? '1 marcada como cumplida'
+                : cumplidas + ' marcadas como cumplidas';
+            var sinMarcar = sinCumplir === 1 ? '1 sin cumplir' : sinCumplir + ' sin cumplir';
+
+            P.Alerta.confirmar({
+                titulo: 'Guardar el cumplimiento del horario',
+                mensaje: 'Se guardará el cumplimiento de ' + total + ': ' + marcadas +
+                    ' y ' + sinMarcar + '. ¿Deseas continuar?',
+                textoAceptar: 'Sí, guardar',
+                textoCancelar: 'Cancelar',
+                claseAceptar: 'btn btn-success',
+                alAceptar: function () {
+                    self.guardarCumplimiento($boton, franjas);
+                }
+            });
+
+            return this;
+        },
+
+        /** Envía las franjas al controlador y muestra el resultado. */
+        guardarCumplimiento: function ($boton, franjas) {
+            var self = this;
+            var texto = $boton.html();
+
+            $boton.prop('disabled', true).html(
+                '<i class="bi bi-hourglass-split" aria-hidden="true"></i> Guardando…'
+            );
+
+            var terminar = function () {
+                $boton.prop('disabled', false).html(texto);
+            };
+
+            P.Ajax.peticion({
+                url: $boton.attr('data-url'),
+                tipo: 'PATCH',
+                datos: { franjas: franjas },
+                avisoError: false,
+                alExito: function (respuesta) {
+                    terminar();
+
+                    var datos = respuesta && respuesta.data ? respuesta.data : {};
+                    self.aplicarCumplimiento(datos.franjas);
+
+                    P.Alerta.exito(
+                        (respuesta && respuesta.message) ||
+                            'Se guardó el cumplimiento del horario.',
+                        'Cumplimiento guardado'
+                    );
+                },
+                alError: function (xhr, mensaje) {
+                    terminar();
+
+                    P.Alerta.error(
+                        mensaje || 'No se pudo guardar el cumplimiento del horario.',
+                        'Ocurrió un problema'
+                    );
+                }
+            });
+
+            return this;
+        },
+
+        /**
+         * Deja las casillas como las devolvió el servidor. Se evita disparar
+         * el "change" de cada fila: basta con sincronizar la cabecera y
+         * redibujar el gráfico una sola vez.
+         */
+        aplicarCumplimiento: function (franjas) {
+            if (! $.isArray(franjas)) {
+                return this;
+            }
+
+            var self = this;
+            var hechos = {};
+            var cambio = false;
+
+            $.each(franjas, function (i, franja) {
+                hechos[String(franja.id)] = !! franja.is_done;
+            });
+
+            $(this.opciones.selectorTabla).find('tr').not('[id="horario-vacio"]').each(function () {
+                var $fila = $(this);
+                var id = String($fila.find('input[name$="[id]"]').val() || '');
+
+                if (! id || ! Object.prototype.hasOwnProperty.call(hechos, id)) {
+                    return;
+                }
+
+                var $check = $fila.find(self.opciones.selectorCheckFila);
+
+                if ($check.is(':checked') !== hechos[id]) {
+                    $check.prop('checked', hechos[id]);
+                    cambio = true;
+                }
+            });
+
+            this.sincronizarTodos();
+
+            if (cambio && P.Grafico) {
+                P.Grafico.actualizar();
+            }
+
+            return this;
         },
 
         /* ==================================================================

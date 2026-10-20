@@ -52,6 +52,7 @@ http://localhost:8088/planificadordiario-transformaconecta/
    - [4.9 Catálogos](#49-catálogos)
    - [4.10 Página de errores y bitácora](#410-página-de-errores-y-bitácora)
    - [4.11 Front-end y plantilla base](#411-front-end-y-plantilla-base)
+   - [4.12 Notificaciones en pantalla](#412-notificaciones-en-pantalla)
 5. [Rutas y parámetros](#5-rutas-y-parámetros)
 6. [Flujos paso a paso](#6-flujos-paso-a-paso)
 7. [Reglas de negocio y validaciones](#7-reglas-de-negocio-y-validaciones)
@@ -200,7 +201,7 @@ principales.
 | `DailyPlanController` | Crear, ver, modificar y eliminar el día |
 | `Concerns/DatosDelFormulario` | Catálogos activos y datos comunes de la vista (incluye los tramos del gráfico) |
 | `resources/views/diario/formulario.blade.php` | La vista de los tres modos |
-| `public/js/script.js` | Fecha y día, filas del horario, casillas, validación y guardado |
+| `public/js/script.js` | Fecha y día, filas del horario, casillas, validación, guardado y cumplimiento por AJAX |
 
 **Cómo funciona.**
 
@@ -212,7 +213,10 @@ principales.
 3. **Antes de empezar**: los ítems del catálogo; al marcar un ítem se habilita su descripción
    libre ("PC, cuaderno, calculadora").
 4. **Mi horario de hoy**: tabla dinámica (agregar y quitar franjas) con hora libre por fila,
-   actividad y casilla de cumplida, más un "marcar todas". Cada cambio redibuja el gráfico.
+   actividad y casilla de cumplida, más un "marcar todas". Cada cambio redibuja el gráfico. En la
+   vista **ver** las casillas de las franjas siguen activas y al final de la sección aparece
+   **Guardar cumplimiento**: confirma con bootbox y guarda por AJAX (`PATCH diario.horario`), sin
+   abrir el formulario completo.
 5. **Bloque de acción**: duración del catálogo, resultado esperado y tarea. El formulario siempre
    envía `action_blocks[0]`; si viene vacío, **no se crea una fila fantasma**.
 6. **Cierre del día** y **Notas**: los cuatro campos del cierre y un textarea de notas (cada
@@ -260,7 +264,9 @@ cumplido, lo pendiente y los solapamientos.
 
 - **En pantalla**: SVG dibujado por `public/js/grafico.js` a partir de los tramos que la vista
   entrega como JSON (`_grafico.blade.php`). Se redibuja solo al cambiar el horario, sin ir al
-  servidor.
+  servidor. Al marcar o desmarcar una franja —también en la vista de sólo lectura— la barra se
+  resalta al instante con color pleno, contorno más grueso y una palomita, o vuelve a quedar
+  clara si se desmarca.
 - **En el PDF**: el mismo gráfico, dibujado con **GD** por `App\Graficos\AgendaPng` (los datos
   los prepara `App\Graficos\AgendaDelDia`). Viaja embebido como imagen, porque el PDF no ejecuta
   JavaScript.
@@ -631,13 +637,32 @@ cruzarlos. Si el log no se puede escribir, el sistema sigue respondiendo.
 - **Sin compilación**: los assets propios se sirven desde `public/` y las librerías se cargan por
   CDN. No hay paso de `npm run build` en el despliegue.
 
+### 4.12 Notificaciones en pantalla
+
+**Qué hace.** Recuerda el diario de hoy: los objetivos principales sin marcar, las franjas cuya
+hora ya pasó sin cumplirse y el aviso de que el día no tiene diario cargado. La campanita vive en
+la cabecera, después de la fecha y la hora; el buzón se despliega de derecha a izquierda como el
+menú del sistema y cada aviso se abre en un modal de Bootstrap. Al cerrarlo queda leído. La
+pantalla es **un solo buzón**: MySQL guarda el historial y Firestore mantiene el espejo interno
+para el push, sin pestañas ni bandejas separadas.
+
+- **Reglas**: `app/Notificaciones/GeneradorDeNotificaciones.php`.
+- **SQL**: `Notificacion`, migración `create_notificaciones_table`, `BuzonMysql`,
+  `NotificacionController` y `index.blade.php`.
+- **NoSQL interno**: `NotificacionFirestore`, `BuzonFirestore` y el cliente REST
+  `ClienteFirestore`; no tiene controlador ni vista propios porque no se muestra aparte.
+- **Tiempo real**: `public/js/notificaciones.js` consulta el contador cada 15 s, actualiza el globo,
+  suena y muestra el aviso; `php artisan notificaciones:generar` corre cada minuto.
+- **Detalle completo**: [docs/notificaciones.md](docs/notificaciones.md).
+
 ---
 
 ## 5. Rutas y parámetros
 
 Todas las rutas viven en `routes/web.php` y pasan por el middleware `web` (sesión y CSRF). Las de
-AJAX devuelven JSON; las que se navegan, una vista. `php artisan route:list` muestra **21 rutas**:
-las 20 de la aplicación y el *health check* `/up` que aporta el framework.
+AJAX devuelven JSON; las que se navegan, una vista. `php artisan route:list` muestra **37 rutas**:
+36 de la aplicación y el *health check* `/up`. Las 10 del módulo de notificaciones están
+detalladas en [docs/notificaciones.md](docs/notificaciones.md#5-rutas-y-respuestas).
 
 | Método | URI | Nombre | Acción | Respuesta |
 | --- | --- | --- | --- | --- |
@@ -654,6 +679,7 @@ las 20 de la aplicación y el *health check* `/up` que aporta el framework.
 | GET | `/diario/{dailyPlan}/detalle` | `diario.detail` | `DailyPlanController@detail` | **JSON** con el día completo |
 | GET | `/diario/{dailyPlan}/editar` | `diario.edit` | `DailyPlanController@edit` | Formulario en modo edición |
 | PUT/PATCH | `/diario/{dailyPlan}` | `diario.update` | `DailyPlanController@update` | **JSON** con el día actualizado |
+| PATCH | `/diario/{dailyPlan}/horario` | `diario.horario` | `DailyPlanController@updateSchedule` | **JSON** con el avance del día y el estado de las franjas |
 | GET | `/diario/{dailyPlan}/imprimir` | `diario.print` | `DailyPlanController@printPdf` | **PDF** del día (`?marca=1` para SPECIMEN) |
 | GET | `/diario/{dailyPlan}/imagen` | `diario.image` | `DailyPlanController@image` | **JPG** o **ZIP** con las páginas |
 | DELETE | `/diario/{dailyPlan}` | `diario.destroy` | `DailyPlanController@destroy` | **JSON** con el resultado |
@@ -816,6 +842,11 @@ para que, al modificar, la propia fecha no cuente como duplicada).
 Los mensajes están en español y son específicos por campo ("Ya existe un diario con esa fecha.",
 "Debes registrar exactamente 3 objetivos principales.", "Agrega al menos una franja en tu horario
 de hoy.", "El bloque no puede terminar antes de empezar.").
+
+El cumplimiento del horario desde la vista de sólo lectura tiene su propia validación en
+`DailyPlanController::updateSchedule()`: `franjas` es obligatorio (mínimo 1), cada
+`franjas.*.id` debe existir **y pertenecer a ese diario**, y `franjas.*.is_done` es obligatorio y
+booleano. Así una petición armada a mano no puede tocar el horario de otro día.
 
 ### 7.2 Validación en el navegador
 
@@ -1027,7 +1058,8 @@ contar lo que hizo la corrida y para que el módulo muestre el reporte.
 
 ### 9.6 Estado de la base de datos de desarrollo
 
-- **21 migraciones aplicadas**: 3 del esqueleto, 16 del dominio y 2 de la planificación periódica.
+- **22 migraciones aplicadas**: 3 del esqueleto, 16 del dominio, 2 de la planificación periódica
+  y 1 del buzón de notificaciones.
 - **7 catálogos sembrados**: 3 energías, 3 tipos de objetivo, 6 ítems de preparación, 15 franjas,
   4 duraciones, 4 resultados y 5 preguntas.
 - **9 diarios registrados** (del 28/09/2026 al 06/10/2026).
@@ -1197,8 +1229,8 @@ planificadordiario-transformaconecta/
 ├── config/                                       app · auth · cache · database · filesystems
 │                                                 logging · mail · mupdf · queue · services · session
 ├── database/
-│   ├── migrations/                               21 migraciones
-│   ├── seeders/                                  Los 7 catálogos (idempotentes)
+│   ├── migrations/                               22 migraciones
+│   ├── seeders/                                  Los 7 catálogos y 2 seeders de notificaciones
 │   └── database.sqlite                           Residuo de la primera etapa (no se usa)
 │
 ├── public/                                       Raíz web real de Laravel
@@ -1220,7 +1252,7 @@ planificadordiario-transformaconecta/
 │   └── welcome.blade.php                         Resto del esqueleto (sin ruta)
 │
 ├── routes/
-│   ├── web.php                                   Las 20 rutas de la aplicación
+│   ├── web.php                                   Rutas de la aplicación y del buzón
 │   └── console.php                               El horario del cron de planificación
 │
 ├── storage/
@@ -1350,7 +1382,7 @@ escritos en español dentro de `Helper`.
    php artisan migrate --seed
    ```
 
-   (21 migraciones y los 7 catálogos; los seeders son idempotentes.)
+   (22 migraciones y los 7 catálogos; los seeders son idempotentes.)
 
 7. **Crear la planilla de planificación periódica** (no viaja en el repositorio, porque vive en
    el disco privado):
@@ -1449,8 +1481,8 @@ el planificador de Laravel corriendo cada minuto:
 | Comprobación | Resultado esperado |
 | --- | --- |
 | `php artisan --version` | `Laravel Framework 12.69.3` |
-| `php artisan migrate:status` | 21 migraciones en estado `Ran` |
-| `php artisan route:list` | 21 rutas (20 de la aplicación + `/up`) |
+| `php artisan migrate:status` | 22 migraciones en estado `Ran` |
+| `php artisan route:list` | 37 rutas (36 de la aplicación + `/up`) |
 | `GET /` | 200 con la fecha de hoy y los accesos |
 | `GET /diario` | El formulario con 3 objetivos, 6 ítems, 5 preguntas y los catálogos |
 | `GET /diario/listado` | 200 con el buscador y la tabla |

@@ -393,6 +393,80 @@ class DailyPlan extends Model
     }
 
     /**
+     * Marca o desmarca el cumplimiento de las franjas del horario.
+     *
+     * Es la acción del botón que va al final de "Mi horario de hoy" en la
+     * vista de sólo lectura: recibe las franjas con su estado y sólo toca las
+     * que pertenecen a este día. No crea ni borra franjas; las que no vengan
+     * en la lista se quedan como estaban.
+     *
+     * Si algo cambió, se borran el PDF y la imagen guardados: el documento
+     * mostraba el cumplimiento anterior y tiene que volver a generarse.
+     *
+     * @param  array<int, array{id?: mixed, is_done?: mixed}>  $franjas
+     * @return array<string, mixed>
+     */
+    public function markScheduleDone(array $franjas): array
+    {
+        return static::enTransaccion(function () use ($franjas) {
+            $ids = collect($franjas)
+                ->pluck('id')
+                ->map(fn (mixed $id) => (int) $id)
+                ->unique()
+                ->all();
+
+            $entries = $this->scheduleEntries()
+                ->whereIn('id', $ids)
+                ->get()
+                ->keyBy('id');
+
+            $cambios = 0;
+
+            foreach ($franjas as $franja) {
+                $entry = $entries->get((int) ($franja['id'] ?? 0));
+
+                if (! $entry) {
+                    continue;
+                }
+
+                $hecho = (bool) ($franja['is_done'] ?? false);
+
+                if ((bool) $entry->is_done === $hecho) {
+                    continue;
+                }
+
+                $entry->is_done = $hecho;
+                $entry->save();
+                $cambios++;
+            }
+
+            // El PDF y la imagen del día enseñan las franjas cumplidas: si el
+            // cumplimiento cambió, lo guardado dejó de representar al día.
+            if ($cambios > 0) {
+                DocumentoDelDiario::de($this)->limpiar();
+            }
+
+            // Se recargan las relaciones que usa el resumen de avance, así la
+            // respuesta lleva el estado real que quedó en la base de datos.
+            $this->load(['goals', 'scheduleEntries', 'actionBlocks.duration']);
+
+            return [
+                'updated' => $cambios,
+                'done' => $this->scheduleEntries->where('is_done', true)->count(),
+                'total' => $this->scheduleEntries->count(),
+                'franjas' => $this->scheduleEntries
+                    ->map(fn (ScheduleEntry $franja) => [
+                        'id' => $franja->id,
+                        'is_done' => (bool) $franja->is_done,
+                    ])
+                    ->values()
+                    ->all(),
+                'progress' => $this->progressSummary(),
+            ];
+        }, 'marcar el cumplimiento del horario', ['diario_id' => $this->id]);
+    }
+
+    /**
      * Elimina el día; las claves foráneas en cascada limpian sus hijos.
      *
      * También se lleva los archivos generados en el almacenamiento privado (el

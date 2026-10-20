@@ -39,6 +39,9 @@
     {{-- Estilos propios: la paleta institucional vive aquí --}}
     <link rel="stylesheet" href="{{ asset('css/styles.css') }}">
 
+    {{-- Buzón de notificaciones: campanita, panel y avisos --}}
+    <link rel="stylesheet" href="{{ asset('css/notificaciones.css') }}">
+
     @stack('estilos')
 </head>
 <body>
@@ -76,6 +79,11 @@
                 <span class="tc-reloj__fecha" id="reloj-fecha">Cargando la fecha…</span>
                 <span class="tc-reloj__hora" id="reloj-hora">--:--:--</span>
             </div>
+
+            {{-- Campanita del buzón: va después de la fecha y la hora. La
+                 llena public/js/notificaciones.js; el panel se abre de derecha
+                 a izquierda con el offcanvas de Bootstrap. --}}
+            @include('notificaciones._campana')
 
         </div>
 
@@ -133,6 +141,17 @@
                     </span>
                 </a>
             </li>
+            <li>
+                <a class="tc-menu__enlace" href="{{ route('notificaciones.index') }}">
+                    <span class="tc-menu__icono tc-menu__icono--naranja">
+                        <i class="bi bi-bell" aria-hidden="true"></i>
+                    </span>
+                    <span class="tc-menu__texto">
+                        Notificaciones
+                        <span class="tc-menu__descripcion">Tus recordatorios del día</span>
+                    </span>
+                </a>
+            </li>
         </ul>
 
         <p class="tc-menu__seccion">Planificación</p>
@@ -179,6 +198,17 @@
 </footer>
 
 {{-- ======================================================================
+     BUZÓN DE NOTIFICACIONES
+     El panel, el modal y la bandeja de avisos viven fuera de la cabecera; la
+     campanita (incluida arriba) sólo aporta la configuración y el botón.
+     ====================================================================== --}}
+@if (config('notificaciones.habilitadas', true))
+    @include('notificaciones._panel')
+    @include('notificaciones._modal')
+    <div class="tc-avisos" id="tc-avisos-notificacion" aria-live="polite" aria-atomic="false"></div>
+@endif
+
+{{-- ======================================================================
      LIBRERÍAS Y SCRIPTS
      El orden importa: primero las librerías y al final el arranque propio.
      ====================================================================== --}}
@@ -191,6 +221,7 @@
 <script src="{{ asset('js/reloj.js') }}"></script>
 <script src="{{ asset('js/menu.js') }}"></script>
 <script src="{{ asset('js/app.js') }}"></script>
+<script src="{{ asset('js/notificaciones.js') }}"></script>
 
 @stack('scripts')
 </body>

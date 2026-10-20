@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\GenerarNotificaciones;
 use App\Console\Commands\ImportarPlanificacion;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -45,3 +46,26 @@ Schedule::command(ImportarPlanificacion::COMANDO)
     ->dailyAt(ImportarPlanificacion::HORA)
     ->withoutOverlapping()
     ->description('Carga en el diario los días que falten del Excel de planificación periódica');
+
+/*
+|--------------------------------------------------------------------------
+| Notificaciones del día
+|--------------------------------------------------------------------------
+|
+| Cada minuto se revisan los objetivos y las franjas del diario de hoy: lo que
+| siga sin marcar se convierte en un recordatorio en MySQL y en Firestore.
+|
+| La campanita también evalúa las reglas cuando alguien tiene la pantalla
+| abierta (como máximo una vez por minuto), así que el aviso llega incluso si
+| este horario no está corriendo. En Windows, para que el módulo funcione sin
+| nadie en pantalla, se puede crear una tarea que ejecute cada minuto:
+|
+|     C:\xampp\php\php.exe artisan notificaciones:generar
+|
+| withoutOverlapping evita que dos corridas se pisen si Firestore demora.
+|
+*/
+Schedule::command(GenerarNotificaciones::COMANDO)
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Genera los recordatorios del diario en MySQL y Firestore');

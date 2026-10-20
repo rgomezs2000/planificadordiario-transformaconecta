@@ -4,6 +4,7 @@ use App\Http\Controllers\DailyController;
 use App\Http\Controllers\DailyPlanController;
 use App\Http\Controllers\ErrorController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\NotificacionController;
 use App\Http\Controllers\PlanificacionController;
 use Illuminate\Support\Facades\Route;
 use Kreait\Firebase\Factory;
@@ -62,6 +63,11 @@ Route::prefix('diario')->name('diario.')->group(function () {
         Route::get('/{dailyPlan}/editar', [DailyPlanController::class, 'edit'])->name('edit');
         Route::match(['put', 'patch'], '/{dailyPlan}', [DailyPlanController::class, 'update'])->name('update');
 
+        // Cumplimiento de las franjas desde la vista de sólo lectura. El botón
+        // del final de "Mi horario de hoy" confirma con bootbox y llama aquí
+        // por AJAX: así se marca el día sin abrir el formulario completo.
+        Route::patch('/{dailyPlan}/horario', [DailyPlanController::class, 'updateSchedule'])->name('horario');
+
         // Imprimir: el PDF y su versión en imagen. Los dos se guardan en el
         // almacenamiento privado: si ya están hechos se sirven desde ahí y sólo
         // se generan cuando faltan. Con ?marca=1 salen como muestra.
@@ -70,6 +76,33 @@ Route::prefix('diario')->name('diario.')->group(function () {
 
         // Eliminar
         Route::delete('/{dailyPlan}', [DailyPlanController::class, 'destroy'])->name('destroy');
+    });
+});
+
+// Notificaciones
+//
+// El buzón tiene dos caras: la principal lee MySQL (la fuente de verdad) y la
+// de Firestore lee el espejo NoSQL. Las dos comparten el mismo uuid y las
+// mismas acciones. El contador es la consulta periódica de la campanita; las
+// rutas con uuid van restringidas para que /contador, /tabla o /estado no se
+// confundan con una notificación.
+Route::prefix('notificaciones')->name('notificaciones.')->group(function () {
+    // MySQL
+    Route::get('/', [NotificacionController::class, 'index'])->name('index');
+    Route::get('/contador', [NotificacionController::class, 'contador'])->name('contador');
+    Route::get('/tabla', [NotificacionController::class, 'tabla'])->name('tabla');
+    Route::get('/estado', [NotificacionController::class, 'estado'])->name('estado');
+    Route::post('/sincronizar', [NotificacionController::class, 'sincronizar'])->name('sincronizar');
+
+    // Acciones por lote (los checkbox de la bandeja)
+    Route::patch('/lote/leidas', [NotificacionController::class, 'marcarLote'])->name('lote.leidas');
+    Route::delete('/lote', [NotificacionController::class, 'descartarLote'])->name('lote.descartar');
+
+    // Una notificación del buzón
+    Route::whereUuid('notificacion')->group(function () {
+        Route::get('/{notificacion}', [NotificacionController::class, 'mostrar'])->name('mostrar');
+        Route::patch('/{notificacion}/leida', [NotificacionController::class, 'marcarLeida'])->name('leida');
+        Route::delete('/{notificacion}', [NotificacionController::class, 'descartar'])->name('descartar');
     });
 });
 

@@ -1,0 +1,1039 @@
+/* ==========================================================================
+   NOTIFICACIONES · Campanita, buzón, avisos y modal
+   Programa de Desarrollo Personal "Transforma-Conecta"
+   --------------------------------------------------------------------------
+   Módulo de notificaciones en pantalla. Se apoya en la paleta institucional
+   de styles.css y en los componentes de Bootstrap 5 (offcanvas, tabs, modal
+   y tablas de DataTables).
+
+   Bloques:
+     1. Campanita de la cabecera
+     2. Panel que se despliega de derecha a izquierda
+     3. Tablas del buzón y acciones por lote
+     4. Avisos emergentes (toasts) y sonido
+     5. Modal de la notificación
+     6. Páginas completas (MySQL y Firestore)
+   ========================================================================== */
+
+/* ==========================================================================
+   1. CAMPANITA
+   ========================================================================== */
+
+.tc-campana {
+    order: 5;
+    flex: 0 0 auto;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.tc-campana__boton {
+    position: relative;
+    width: 2.85rem;
+    height: 2.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--tc-azul-oscuro);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+    color: var(--tc-azul-oscuro);
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion),
+        border-color var(--tc-transicion), box-shadow var(--tc-transicion);
+}
+
+.tc-campana__boton:hover,
+.tc-campana__boton:focus-visible {
+    background: var(--tc-azul-oscuro);
+    border-color: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    outline: none;
+}
+
+.tc-campana__boton:focus-visible {
+    box-shadow: 0 0 0 0.2rem rgba(0, 128, 208, 0.35);
+}
+
+/* El globo del contador: naranja institucional, con borde blanco para que se
+   lea sobre cualquier fondo de la cabecera. */
+.tc-campana__contador {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    padding: 0 0.3rem;
+    border: 2px solid var(--tc-blanco);
+    border-radius: 999px;
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.tc-campana__punto {
+    position: absolute;
+    right: -0.2rem;
+    bottom: -0.2rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 2px solid var(--tc-blanco);
+    border-radius: 50%;
+    background: var(--tc-turquesa);
+}
+
+/* El atributo hidden tiene que ganarle a los display de los componentes. */
+.tc-campana__contador[hidden],
+.tc-campana__punto[hidden] {
+    display: none !important;
+}
+
+/* Cuando llega algo nuevo la campanita se mece una vez. */
+.tc-campana--nueva .tc-campana__boton {
+    animation: tc-campana-suena 900ms ease-in-out;
+}
+
+@keyframes tc-campana-suena {
+    0%, 100% { transform: rotate(0deg); }
+    15% { transform: rotate(-14deg); }
+    30% { transform: rotate(11deg); }
+    45% { transform: rotate(-8deg); }
+    60% { transform: rotate(6deg); }
+    75% { transform: rotate(-3deg); }
+}
+
+/* En móvil la campanita va justo después del reloj y antes de los títulos. */
+@media (max-width: 767.98px) {
+    .tc-cabecera__titulos {
+        order: 5;
+    }
+
+    .tc-campana {
+        order: 4;
+    }
+}
+
+/* ==========================================================================
+   2. PANEL DEL BUZÓN
+   ========================================================================== */
+
+.tc-buzon {
+    --bs-offcanvas-width: min(96vw, 470px);
+    display: flex;
+    flex-direction: column;
+    background: var(--tc-fondo);
+    border-left: 4px solid var(--tc-naranja);
+    box-shadow: -12px 0 34px rgba(0, 32, 96, 0.18);
+    color: var(--tc-texto);
+}
+
+.tc-buzon__cabecera {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem 0.9rem;
+    background: linear-gradient(135deg, var(--tc-azul-oscuro) 0%, var(--tc-azul-profundo) 100%);
+    color: var(--tc-blanco);
+}
+
+.tc-buzon__identidad {
+    min-width: 0;
+}
+
+.tc-buzon__sobre {
+    margin: 0 0 0.15rem;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.tc-buzon__titulo-panel {
+    margin: 0;
+    color: var(--tc-blanco);
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+.tc-buzon__fuentes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin-top: 0.45rem;
+}
+
+.tc-buzon__fuente {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.tc-buzon__punto {
+    display: inline-block;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--tc-gris-300);
+}
+
+.tc-buzon__punto--ok {
+    background: #1e9e5a;
+    box-shadow: 0 0 0 3px rgba(30, 158, 90, 0.18);
+}
+
+.tc-buzon__punto--mal {
+    background: var(--tc-rojo);
+    box-shadow: 0 0 0 3px rgba(217, 11, 11, 0.16);
+}
+
+.tc-buzon__fuente-texto {
+    margin: 0.35rem 0 0;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.68rem;
+}
+
+.tc-buzon__cuerpo {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.85rem 0.9rem 1rem;
+}
+
+.tc-buzon__resumen {
+    margin: 0 0 0.6rem;
+    color: var(--tc-gris-500);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.tc-buzon__tabs {
+    border-bottom: 2px solid var(--tc-borde);
+}
+
+.tc-buzon__tabs .nav-link {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    padding: 0.5rem 0.75rem;
+    color: var(--tc-azul-profundo);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.tc-buzon__tabs .nav-link:hover,
+.tc-buzon__tabs .nav-link:focus-visible {
+    color: var(--tc-naranja-oscuro);
+    border-bottom-color: var(--tc-naranja-tenue);
+    outline: none;
+}
+
+.tc-buzon__tabs .nav-link.active {
+    background: transparent;
+    color: var(--tc-naranja-oscuro);
+    border-bottom-color: var(--tc-naranja);
+}
+
+.tc-buzon__contenido {
+    padding-top: 0.65rem;
+}
+
+.tc-buzon__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0 0.6rem;
+}
+
+.tc-buzon__acciones--pagina {
+    padding: 0.35rem 0 0.75rem;
+}
+
+.tc-buzon__seleccion {
+    margin-right: auto;
+    color: var(--tc-gris-500);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.tc-buzon__accion {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--tc-gris-300);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+    color: var(--tc-azul-profundo);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion),
+        border-color var(--tc-transicion), opacity var(--tc-transicion);
+}
+
+.tc-buzon__accion:hover:not(:disabled),
+.tc-buzon__accion:focus-visible:not(:disabled) {
+    border-color: var(--tc-naranja);
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+    outline: none;
+}
+
+.tc-buzon__accion:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* --- Pie del panel --- */
+
+.tc-buzon__pie {
+    flex: 0 0 auto;
+    padding: 0.7rem 0.9rem;
+    border-top: 1px solid var(--tc-borde);
+    background: var(--tc-blanco);
+}
+
+.tc-buzon__preferencias {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.55rem;
+}
+
+.tc-buzon__preferencia {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid var(--tc-gris-300);
+    border-radius: 999px;
+    background: var(--tc-gris-100);
+    color: var(--tc-gris-500);
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion),
+        border-color var(--tc-transicion);
+}
+
+.tc-buzon__preferencia[aria-pressed="true"] {
+    border-color: var(--tc-turquesa);
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tc-buzon__preferencia:hover,
+.tc-buzon__preferencia:focus-visible {
+    border-color: var(--tc-azul);
+    outline: none;
+}
+
+.tc-buzon__pie-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.tc-buzon__boton-pie {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--tc-naranja);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color var(--tc-transicion), color var(--tc-transicion);
+}
+
+.tc-buzon__boton-pie:hover,
+.tc-buzon__boton-pie:focus-visible {
+    background: var(--tc-naranja-oscuro);
+    border-color: var(--tc-naranja-oscuro);
+    color: var(--tc-blanco);
+    text-decoration: none;
+    outline: none;
+}
+
+.tc-buzon__boton-pie--contorno {
+    border-color: var(--tc-gris-300);
+    background: var(--tc-blanco);
+    color: var(--tc-azul-profundo);
+}
+
+.tc-buzon__boton-pie--contorno:hover,
+.tc-buzon__boton-pie--contorno:focus-visible {
+    background: var(--tc-azul-profundo);
+    border-color: var(--tc-azul-profundo);
+    color: var(--tc-blanco);
+}
+
+.tc-buzon__mensaje {
+    margin: 0.55rem 0 0;
+    color: var(--tc-turquesa-oscuro);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   3. TABLAS DEL BUZÓN
+   ========================================================================== */
+
+.tc-buzon__tabla {
+    width: 100% !important;
+    margin: 0 !important;
+    background: var(--tc-blanco);
+    border: 1px solid var(--tc-borde);
+    border-radius: var(--tc-radio-sm);
+    overflow: hidden;
+    font-size: 0.8rem;
+}
+
+.tc-buzon__tabla thead th {
+    padding: 0.5rem 0.55rem;
+    border: 0;
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tc-buzon__tabla tbody td {
+    padding: 0.55rem;
+    border-color: var(--tc-borde);
+    vertical-align: middle;
+}
+
+.tc-buzon__tabla tbody tr {
+    cursor: pointer;
+    transition: background-color var(--tc-transicion);
+}
+
+.tc-buzon__tabla tbody tr:hover {
+    background: var(--tc-celeste-tenue);
+}
+
+.tc-buzon__tabla tbody tr:focus-within {
+    background: var(--tc-celeste-tenue);
+}
+
+.tc-buzon__col-check {
+    width: 2.3rem;
+}
+
+.tc-buzon__col-fecha {
+    width: 6rem;
+    text-align: right;
+}
+
+.tc-buzon__tabla .form-check-input {
+    cursor: pointer;
+    accent-color: var(--tc-naranja);
+}
+
+/* El resumen de la fila: tipo, título, mensaje corto y estado. */
+.tc-buzon__fila {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+/* Tipo, título y estado en una sola línea; el resumen debajo. */
+.tc-buzon__linea {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.tc-buzon__tipo {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tc-buzon__tipo--objetivo {
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+}
+
+.tc-buzon__tipo--franja {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tc-buzon__tipo--diario_ausente {
+    background: #fde8e8;
+    color: var(--tc-rojo);
+}
+
+.tc-buzon__titulo {
+    color: var(--tc-azul-oscuro);
+    font-size: 0.83rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.tc-buzon__resumen {
+    color: var(--tc-gris-500);
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.tc-buzon__chip {
+    padding: 0.02rem 0.35rem;
+    border-radius: 999px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tc-buzon__chip--nueva {
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+}
+
+.tc-buzon__chip--leida {
+    background: var(--tc-gris-200);
+    color: var(--tc-gris-500);
+}
+
+.tc-buzon__fila .tc-buzon__chip {
+    margin-top: 0;
+}
+
+.tc-buzon__fecha-dia,
+.tc-buzon__fecha-hora {
+    display: block;
+    text-align: right;
+    line-height: 1.25;
+}
+
+.tc-buzon__fecha-dia {
+    color: var(--tc-azul-oscuro);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.tc-buzon__fecha-hora {
+    color: var(--tc-gris-500);
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* DataTables dentro del panel: más compacto y en español. */
+.tc-buzon .dataTables_wrapper {
+    font-size: 0.72rem;
+}
+
+.tc-buzon .dataTables_wrapper .dataTables_info,
+.tc-buzon .dataTables_wrapper .dataTables_length,
+.tc-buzon .dataTables_wrapper .dataTables_filter {
+    color: var(--tc-gris-500);
+    font-size: 0.7rem;
+}
+
+.tc-buzon .dataTables_wrapper .dataTables_filter input,
+.tc-buzon .dataTables_wrapper .dataTables_length select {
+    border: 1px solid var(--tc-gris-300);
+    border-radius: var(--tc-radio-sm);
+    font-size: 0.72rem;
+}
+
+.tc-buzon .dataTables_wrapper .pagination {
+    --bs-pagination-font-size: 0.7rem;
+    --bs-pagination-padding-x: 0.45rem;
+    --bs-pagination-padding-y: 0.2rem;
+    margin-bottom: 0.2rem;
+}
+
+.tc-buzon__tabla + .dataTables_wrapper {
+    margin-top: 0.35rem;
+}
+
+/* ==========================================================================
+   4. AVISOS EMERGENTES Y SONIDO
+   ========================================================================== */
+
+.tc-avisos {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1090;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(92vw, 360px);
+    pointer-events: none;
+}
+
+.tc-aviso {
+    display: flex;
+    gap: 0.65rem;
+    padding: 0.7rem 0.75rem;
+    border-left: 5px solid var(--tc-naranja);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+    box-shadow: var(--tc-sombra-alta);
+    color: var(--tc-texto);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 220ms ease, transform 220ms ease;
+    pointer-events: auto;
+}
+
+.tc-aviso--visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.tc-aviso--alta {
+    border-left-color: var(--tc-rojo);
+}
+
+.tc-aviso--baja {
+    border-left-color: var(--tc-turquesa);
+}
+
+.tc-aviso__icono {
+    flex: 0 0 auto;
+    width: 2.2rem;
+    height: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+    font-size: 1.05rem;
+}
+
+.tc-aviso--alta .tc-aviso__icono {
+    background: #fde8e8;
+    color: var(--tc-rojo);
+}
+
+.tc-aviso--baja .tc-aviso__icono {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tc-aviso__cuerpo {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tc-aviso__tipo {
+    display: block;
+    margin-bottom: 0.1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.tc-aviso__titulo {
+    display: block;
+    color: var(--tc-azul-oscuro);
+    font-size: 0.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.tc-aviso__texto {
+    margin: 0.15rem 0 0;
+    color: var(--tc-gris-500);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.tc-aviso__mas {
+    margin: 0.25rem 0 0;
+    color: var(--tc-naranja-oscuro);
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.tc-aviso__cerrar {
+    flex: 0 0 auto;
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    color: var(--tc-gris-500);
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 0.1rem;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+.tc-aviso__cerrar:hover,
+.tc-aviso__cerrar:focus-visible {
+    color: var(--tc-rojo);
+    outline: none;
+}
+
+/* ==========================================================================
+   5. MODAL DE LA NOTIFICACIÓN
+   ========================================================================== */
+
+.tc-notificacion {
+    border: 0;
+    border-radius: var(--tc-radio);
+    overflow: hidden;
+    box-shadow: var(--tc-sombra-alta);
+}
+
+.tc-notificacion__cabecera {
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem;
+    border-bottom: 3px solid var(--tc-naranja);
+    background: linear-gradient(135deg, var(--tc-blanco) 0%, var(--tc-naranja-tenue) 100%);
+}
+
+.tc-notificacion__encabezado {
+    min-width: 0;
+}
+
+.tc-notificacion__tipo {
+    display: inline-block;
+    margin-bottom: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--tc-azul-oscuro);
+    color: var(--tc-blanco);
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.tc-notificacion__titulo {
+    margin: 0;
+    color: var(--tc-azul-oscuro);
+    font-size: 1.2rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.tc-notificacion__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.tc-notificacion__chip {
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.tc-notificacion__chip--alta {
+    background: #fde8e8;
+    color: var(--tc-rojo);
+}
+
+.tc-notificacion__chip--media {
+    background: var(--tc-naranja-tenue);
+    color: var(--tc-naranja-oscuro);
+}
+
+.tc-notificacion__chip--baja {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tc-notificacion__dato-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--tc-gris-500);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.tc-notificacion__mensaje {
+    margin: 0 0 1rem;
+    padding: 0.8rem 0.9rem;
+    border-left: 4px solid var(--tc-naranja);
+    border-radius: 0 var(--tc-radio-sm) var(--tc-radio-sm) 0;
+    background: var(--tc-gris-100);
+    color: var(--tc-texto);
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.tc-notificacion__detalle {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.55rem 1rem;
+    margin: 0 0 1rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px dashed var(--tc-gris-300);
+    border-radius: var(--tc-radio-sm);
+    background: var(--tc-blanco);
+}
+
+.tc-notificacion__dato {
+    min-width: 0;
+}
+
+.tc-notificacion__dato dt {
+    margin-bottom: 0.1rem;
+    color: var(--tc-gris-500);
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.tc-notificacion__dato dd {
+    margin: 0;
+    color: var(--tc-texto);
+    font-size: 0.82rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.tc-notificacion__plan {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.tc-notificacion__pie {
+    gap: 0.5rem;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--tc-borde);
+    background: var(--tc-gris-100);
+}
+
+/* ==========================================================================
+   6. PÁGINAS COMPLETAS (MySQL Y FIRESTORE)
+   ========================================================================== */
+
+.tc-notificaciones__cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.tc-notificaciones__identidad {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.tc-notificaciones__icono {
+    flex: 0 0 auto;
+    width: 3.2rem;
+    height: 3.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--tc-radio);
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+    font-size: 1.45rem;
+    box-shadow: var(--tc-sombra);
+}
+
+.tc-notificaciones__icono--nube {
+    background: var(--tc-turquesa);
+}
+
+.tc-notificaciones__titulo {
+    margin-bottom: 0.25rem;
+}
+
+.tc-notificaciones__descripcion {
+    margin: 0 0 0.45rem;
+    color: var(--tc-gris-500);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    max-width: 62ch;
+}
+
+.tc-notificaciones__resumen {
+    margin: 0;
+    color: var(--tc-azul-profundo);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.tc-notificaciones__mensaje {
+    margin: 0 0 0.85rem;
+    padding: 0.55rem 0.8rem;
+    border-left: 4px solid var(--tc-turquesa);
+    border-radius: 0 var(--tc-radio-sm) var(--tc-radio-sm) 0;
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.tc-notificaciones__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tc-notificaciones__panel {
+    margin-bottom: 1rem;
+}
+
+.tc-notificaciones__panel-cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.tc-notificaciones__motor {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    vertical-align: middle;
+}
+
+.tc-notificaciones__motor--nosql {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+.tc-notificaciones__fuente {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border: 1px solid var(--tc-borde);
+    border-radius: 999px;
+    background: var(--tc-gris-100);
+    color: var(--tc-gris-500);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.tc-notificaciones__nota {
+    color: var(--tc-gris-500);
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.tc-notificaciones__pie {
+    margin: 0.5rem 0 0;
+    color: var(--tc-gris-500);
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.tc-notificaciones__pie a {
+    color: var(--tc-azul-profundo);
+    font-weight: 700;
+}
+
+/* En las páginas, la tabla deja aire y las filas respiran un poco más. */
+.tc-notificaciones__panel .tc-buzon__tabla tbody td {
+    padding: 0.65rem 0.7rem;
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+
+@media (max-width: 575.98px) {
+    .tc-buzon {
+        --bs-offcanvas-width: 100vw;
+        border-left-width: 0;
+    }
+
+    .tc-buzon__cabecera {
+        padding: 0.85rem 0.9rem 0.75rem;
+    }
+
+    .tc-buzon__cuerpo {
+        padding: 0.7rem 0.65rem 0.9rem;
+    }
+
+    .tc-buzon__col-fecha {
+        width: 5rem;
+    }
+
+    .tc-notificaciones__cabecera {
+        flex-direction: column;
+    }
+
+    .tc-notificaciones__acciones {
+        width: 100%;
+    }
+
+    .tc-avisos {
+        left: 0.75rem;
+        right: 0.75rem;
+        bottom: 0.75rem;
+        width: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tc-campana--nueva .tc-campana__boton {
+        animation: none;
+    }
+
+    .tc-aviso {
+        transition: none;
+    }
+}

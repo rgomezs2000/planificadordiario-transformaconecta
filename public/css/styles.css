@@ -1229,6 +1229,17 @@ div.dt-container .dt-info {
     background-color: var(--tc-turquesa-tenue);
 }
 
+/* Pie del horario en la vista de sólo lectura: la ayuda y el botón que guarda
+   el cumplimiento por AJAX. */
+.tf-horario__pie {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
 /* --- Listado de diarios --- */
 
 .tf-tabla {

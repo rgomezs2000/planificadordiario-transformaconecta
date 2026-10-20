@@ -74,7 +74,7 @@
 
 # Archivos sueltos que tampoco deben descargarse.
 <IfModule mod_authz_core.c>
-    <FilesMatch "(?i)^\.env(\..*)?$|^composer\.(json|lock)$|^artisan$|^package(-lock)?\.json$|^phpunit\.xml$|^vite\.config\.js$|\.(log|sqlite|sql|bak|old|ini|dist|sh|ya?ml)$">
+    <FilesMatch "(?i)^\.env(\..*)?$|^composer\.(json|lock)$|^artisan$|^package(-lock)?\.json$|^phpunit\.xml$|^vite\.config\.js$|^firebase-credentials\.json$|^firebase\.json$|^firestore\.(indexes\.json|rules)$|\.(log|sqlite|sql|bak|old|ini|dist|sh|ya?ml)$">
         Require all denied
     </FilesMatch>
 </IfModule>

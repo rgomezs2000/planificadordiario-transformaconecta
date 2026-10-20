@@ -156,10 +156,11 @@
                                 <th class="tf-horario__col-hora" scope="col">Hora</th>
                                 <th scope="col">¿Qué vas a hacer hoy?</th>
                                 <th class="tf-horario__col-check text-center" scope="col">
-                                    @unless ($soloLectura)
-                                        <input class="form-check-input" type="checkbox" id="horario-todos"
-                                               title="Marcar o desmarcar todas las franjas">
-                                    @endunless
+                                    {{-- En la vista de sólo lectura también se
+                                         puede marcar el cumplimiento de todas
+                                         las franjas de una vez. --}}
+                                    <input class="form-check-input" type="checkbox" id="horario-todos"
+                                           title="Marcar o desmarcar todas las franjas">
                                     <label class="visually-hidden" for="horario-todos">Marcar todas</label>
                                 </th>
                                 <th class="tf-horario__col-accion" scope="col">
@@ -186,10 +187,13 @@
                                                aria-label="Actividad de la franja" {!! $ro !!}>
                                     </td>
                                     <td class="text-center">
+                                        {{-- La casilla queda activa también en
+                                             modo ver: el botón del final de la
+                                             sección guarda el cumplimiento. --}}
                                         <input class="form-check-input tf-horario__check" type="checkbox"
                                                name="schedule[{{ $i }}][is_done]" value="1"
                                                @checked($franja->is_done)
-                                               aria-label="Franja cumplida" {!! $dis !!}>
+                                               aria-label="Franja cumplida">
                                     </td>
                                     <td class="text-center">
                                         @unless ($soloLectura)
@@ -209,6 +213,21 @@
                             </tr>
                         </tbody>
                     </table>
+
+                    @if ($soloLectura && $plan)
+                        {{-- El botón va al final de la sección. Confirma con
+                             bootbox y guarda el cumplimiento por AJAX, sin
+                             abrir el formulario completo. --}}
+                        <div class="tf-horario__pie">
+                            <p class="tf-ayuda mb-0">
+                                Marca las franjas que cumpliste y guarda el cambio.
+                            </p>
+                            <button type="button" class="tc-boton tc-boton--turquesa" id="horario-guardar"
+                                    data-url="{{ route('diario.horario', $plan) }}">
+                                <i class="bi bi-check2-square" aria-hidden="true"></i> Guardar cumplimiento
+                            </button>
+                        </div>
+                    @endif
 
                     @unless ($soloLectura)
                         <button type="button" class="tc-boton tc-boton--turquesa" id="horario-agregar">

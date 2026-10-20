@@ -226,6 +226,76 @@ class DailyPlanController extends Controller
     }
 
     /* ======================================================================
+     |  Cumplimiento del horario (vista de sólo lectura)
+     ====================================================================== */
+
+    /**
+     * Marca o desmarca las franjas del horario de un día (PATCH).
+     *
+     * Lo llama el botón del final de "Mi horario de hoy" en la vista de sólo
+     * lectura. El navegador manda todas las franjas con su estado (1 o 0) y
+     * aquí se guardan; no se crean ni se borran franjas. La respuesta lleva el
+     * avance del día y el estado final de cada franja, para que la pantalla
+     * quede igual que la base de datos.
+     *
+     * La validación va fuera del try/catch a propósito: si falla, Laravel
+     * responde 422 con el detalle y la alerta de bootbox muestra el motivo.
+     */
+    public function updateSchedule(Request $request, int $dailyPlan): JsonResponse
+    {
+        $plan = null;
+
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'buscar el diario antes de marcar el horario', ['diario_id' => $dailyPlan]);
+        }
+
+        if (! $plan) {
+            return $this->jsonError('El diario que intentas marcar no existe.', [], 404);
+        }
+
+        // Cada franja tiene que ser de este día: así una petición armada a mano
+        // no puede tocar el horario de otro diario.
+        $data = $request->validate([
+            'franjas' => ['required', 'array', 'min:1'],
+            'franjas.*.id' => [
+                'required',
+                'integer',
+                'distinct',
+                Rule::exists('schedule_entries', 'id')
+                    ->where(fn ($query) => $query->where('daily_plan_id', $plan->id)),
+            ],
+            'franjas.*.is_done' => ['required', 'boolean'],
+        ], [
+            'franjas.required' => 'No se recibió ninguna franja del horario.',
+            'franjas.array' => 'El horario enviado no tiene un formato válido.',
+            'franjas.min' => 'No se recibió ninguna franja del horario.',
+            'franjas.*.id.required' => 'Cada franja del horario necesita su identificador.',
+            'franjas.*.id.integer' => 'El identificador de la franja del horario no es válido.',
+            'franjas.*.id.distinct' => 'No se puede repetir la misma franja del horario.',
+            'franjas.*.id.exists' => 'Alguna de las franjas no pertenece a este diario.',
+            'franjas.*.is_done.required' => 'Cada franja necesita indicar si se cumplió.',
+            'franjas.*.is_done.boolean' => 'El estado de cumplimiento de la franja no es válido.',
+        ]);
+
+        try {
+            $resumen = $plan->markScheduleDone($data['franjas']);
+
+            $mensaje = $resumen['updated'] > 0
+                ? 'Se guardó el cumplimiento del horario: '.$resumen['done'].' de '
+                    .$resumen['total'].' franjas marcadas como cumplidas.'
+                : 'El horario ya estaba como lo enviaste: no hubo cambios que guardar.';
+
+            return $this->jsonSuccess($resumen, $mensaje);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'marcar el cumplimiento del horario', ['diario_id' => $dailyPlan]);
+
+            return $this->jsonError('No se pudo guardar el cumplimiento del horario. Intenta de nuevo.', [], 500);
+        }
+    }
+
+    /* ======================================================================
      |  Eliminar
      ====================================================================== */
 

@@ -5,7 +5,8 @@
    Dibuja una línea de tiempo con las actividades del horario: cada una es una
    barra ubicada en su hora, con su propio color.
 
-     · las actividades cumplidas se pintan nítidas;
+     · las actividades cumplidas se pintan a color pleno, con el contorno más
+       grueso y una palomita;
      · las que todavía no se marcaron, claras;
      · donde dos actividades se pisan, ese pedazo se pinta transparente.
 
@@ -259,9 +260,10 @@ window.Planificador = window.Planificador || {};
                 return this;
             }
 
-            // 2. El fondo: cada pedazo, transparente donde se cruzan.
+            // 2. El fondo: cada pedazo, transparente donde se cruzan. Las
+            //    cumplidas van a color pleno y las pendientes bien claras.
             $.each(datos.piezas, function (i, pieza) {
-                var opacidad = pieza.cruce ? 0.12 : (pieza.hecho ? 1 : 0.42);
+                var opacidad = pieza.cruce ? 0.12 : (pieza.hecho ? 1 : 0.34);
                 var x0 = x(pieza.inicio);
                 var ancho = Math.max(1, x(pieza.fin) - x0);
 
@@ -271,14 +273,22 @@ window.Planificador = window.Planificador || {};
 
             // 3. El contorno de cada actividad y la zona que responde al puntero.
             //    Adentro de las barras no va texto: la actividad y la hora se
-            //    ven en el cuadro que aparece al señalarlas.
+            //    ven en el cuadro que aparece al señalarlas. La franja cumplida
+            //    se resalta con un contorno más grueso y una palomita.
             $.each(datos.tramos, function (indice, tramo) {
                 var x0 = x(tramo.inicio);
                 var x1 = x(tramo.fin);
                 var anchoTramo = Math.max(1, x1 - x0);
 
                 svg.push('<rect x="' + x0 + '" y="' + self.arribaBarra + '" width="' + anchoTramo +
-                    '" height="' + self.altoBarra + '" fill="none" stroke="' + tramo.color + '" stroke-width="1"/>');
+                    '" height="' + self.altoBarra + '" fill="none" stroke="' + tramo.color +
+                    '" stroke-width="' + (tramo.hecho ? 2 : 1) + '"/>');
+
+                // La palomita, sólo si la barra tiene ancho suficiente. En las
+                // franjas cortas el color pleno y el contorno ya la distinguen.
+                if (tramo.hecho && anchoTramo >= 24) {
+                    svg.push(self.palomita(x0 + 9, self.arribaBarra + 10, tramo.color));
+                }
 
                 svg.push('<rect class="tf-grafico__zona" x="' + x0 + '" y="' + self.arribaBarra + '" width="' +
                     anchoTramo + '" height="' + self.altoBarra + '" fill="transparent" ' +
@@ -358,6 +368,19 @@ window.Planificador = window.Planificador || {};
 
         callar: function () {
             $('#grafico-aviso').removeClass('tf-grafico__aviso--visible');
+        },
+
+        /**
+         * La palomita de una franja cumplida: un círculo blanco con el check
+         * del color de la barra. Va arriba a la izquierda de la barra, así se
+         * ve sobre cualquier color de la paleta.
+         */
+        palomita: function (cx, cy, color) {
+            return '<circle class="tf-grafico__palomita" cx="' + cx + '" cy="' + cy +
+                '" r="7" fill="#FFFFFF" fill-opacity="0.92"/>' +
+                '<path class="tf-grafico__palomita" d="M ' + (cx - 3.2) + ' ' + cy +
+                ' l 2.2 2.2 l 4.2 -4.4" fill="none" stroke="' + color +
+                '" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>';
         },
 
         /* --- Ayudas ---------------------------------------------------- */
