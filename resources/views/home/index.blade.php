@@ -26,6 +26,12 @@
                         @endif
                     </p>
 
+                    @if ($today->metaSemanal())
+                        <p class="tc-tarjeta__texto">
+                            <strong>Meta de la semana:</strong> {{ $today->metaSemanal()->goal }}
+                        </p>
+                    @endif
+
                     <div class="tc-resumen">
                         <div class="tc-resumen__dato">
                             <span class="tc-resumen__valor">{{ $avance['goals_done'] }}/{{ $avance['goals_total'] }}</span>
@@ -34,6 +40,10 @@
                         <div class="tc-resumen__dato">
                             <span class="tc-resumen__valor">{{ $avance['schedule_percent'] }}</span>
                             <span class="tc-resumen__etiqueta">Horario</span>
+                        </div>
+                        <div class="tc-resumen__dato">
+                            <span class="tc-resumen__valor">{{ $avance['activities_done'] }}/{{ $avance['activities_total'] }}</span>
+                            <span class="tc-resumen__etiqueta">Actividades</span>
                         </div>
                         <div class="tc-resumen__dato">
                             <span class="tc-resumen__valor">{{ $avance['focus_label'] }}</span>

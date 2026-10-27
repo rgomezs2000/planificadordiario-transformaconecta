@@ -176,8 +176,8 @@ class BuzonDual implements Buzon
 
     /**
      * Marca como leídos los avisos que dejaron de tener sentido: el diario
-     * ausente cuando el diario ya existe, y los objetivos o franjas que se
-     * marcaron después de haber sido recordados.
+     * ausente cuando el diario ya existe, y los objetivos, franjas o
+     * actividades que se marcaron después de haber sido recordados.
      *
      * Devuelve cuántos avisos se resolvieron.
      */
@@ -187,7 +187,7 @@ class BuzonDual implements Buzon
 
         $plan = DailyPlan::query()
             ->whereDate('plan_date', $hoy->toDateString())
-            ->with(['goals', 'scheduleEntries'])
+            ->with(['goals', 'scheduleEntries', 'activities'])
             ->first();
 
         if (! $plan) {
@@ -220,6 +220,20 @@ class BuzonDual implements Buzon
                 ->vigentes()
                 ->noLeidas()
                 ->whereIn('schedule_entry_id', $franjasHechas)
+                ->pluck('id')
+                ->all());
+        }
+
+        $actividadesHechas = $plan->activities
+            ->filter(fn ($actividad) => (bool) $actividad->pivot->is_done)
+            ->pluck('id')
+            ->all();
+
+        if ($actividadesHechas !== []) {
+            $ids = array_merge($ids, Notificacion::query()
+                ->vigentes()
+                ->noLeidas()
+                ->whereIn('daily_activity_id', $actividadesHechas)
                 ->pluck('id')
                 ->all());
         }

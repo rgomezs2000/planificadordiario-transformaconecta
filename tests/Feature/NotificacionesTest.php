@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\DailyActivity;
 use App\Models\DailyPlan;
 use App\Models\EnergyLevel;
 use App\Models\GoalType;
@@ -35,6 +36,9 @@ class NotificacionesTest extends TestCase
             'notificaciones.margen_minutos' => 10,
             'notificaciones.avisar_diario_ausente' => true,
             'notificaciones.hora_diario_ausente' => '08:00',
+            // Las pruebas de objetivos y franjas cuentan avisos exactos; la
+            // regla de actividades tiene sus propias pruebas más abajo.
+            'notificaciones.avisar_actividades' => false,
             'notificaciones.segundos_entre_generaciones' => 55,
             'firebase.habilitado' => false,
         ]);
@@ -112,6 +116,84 @@ class NotificacionesTest extends TestCase
         $this->travelTo(Carbon::parse('2026-10-20 09:00:00'));
 
         $this->assertSame([], app(GeneradorDeNotificaciones::class)->generar());
+    }
+
+    public function test_pregunta_por_las_actividades_que_siguen_sin_marcarse(): void
+    {
+        config(['notificaciones.avisar_actividades' => true]);
+        $this->travelTo(Carbon::parse('2026-10-20 22:00:00'));
+
+        $plan = $this->planDeHoy([1, 2, 3], ['08:00:00' => ['is_done' => true]]);
+        $meditacion = DailyActivity::query()->where('clave', 'meditacion')->firstOrFail();
+        $caminata = DailyActivity::query()->where('clave', 'caminata')->firstOrFail();
+
+        $plan->activities()->updateExistingPivot($meditacion->id, ['is_done' => true, 'minutes' => 15]);
+
+        $candidatas = app(GeneradorDeNotificaciones::class)->generar();
+        $claves = collect($candidatas)->pluck('clave')->all();
+
+        $this->assertContains('actividad:'.$plan->id.':'.$caminata->id.':2026-10-20', $claves);
+        $this->assertNotContains('actividad:'.$plan->id.':'.$meditacion->id.':2026-10-20', $claves);
+        $this->assertSame(
+            Candidata::TIPO_ACTIVIDAD,
+            collect($candidatas)->firstWhere('clave', 'actividad:'.$plan->id.':'.$caminata->id.':2026-10-20')->tipo
+        );
+    }
+
+    public function test_recuerda_los_temas_del_dia_en_whatsapp(): void
+    {
+        config(['notificaciones.avisar_actividades' => true]);
+        $this->travelTo(Carbon::parse('2026-10-20 11:30:00'));
+
+        $plan = $this->planDeHoy([1, 2, 3], []);
+        $whatsapp = DailyActivity::query()->where('clave', 'temas_whatsapp')->firstOrFail();
+
+        $candidatas = app(GeneradorDeNotificaciones::class)->generar();
+        $claves = collect($candidatas)->pluck('clave')->all();
+
+        $this->assertContains('actividad:'.$plan->id.':'.$whatsapp->id.':2026-10-20', $claves);
+
+        $aviso = collect($candidatas)
+            ->firstWhere('clave', 'actividad:'.$plan->id.':'.$whatsapp->id.':2026-10-20');
+
+        $this->assertSame(Candidata::TIPO_ACTIVIDAD, $aviso->tipo);
+        $this->assertStringContainsString('WhatsApp', $aviso->titulo);
+    }
+
+    public function test_una_actividad_no_se_avisa_antes_de_su_hora(): void
+    {
+        config(['notificaciones.avisar_actividades' => true]);
+        $this->travelTo(Carbon::parse('2026-10-20 08:00:00'));
+
+        $this->planDeHoy([1, 2, 3], []);
+
+        // A las 8:00 ninguna actividad llegó a su hora de recordatorio.
+        $this->assertSame([], app(GeneradorDeNotificaciones::class)->generar());
+    }
+
+    public function test_al_marcar_la_actividad_se_resuelve_su_aviso(): void
+    {
+        config(['notificaciones.avisar_actividades' => true]);
+        $this->travelTo(Carbon::parse('2026-10-20 22:00:00'));
+
+        $plan = $this->planDeHoy([1, 2, 3], []);
+        $actividad = DailyActivity::query()->where('clave', 'meditacion')->firstOrFail();
+
+        $buzon = app(BuzonDual::class);
+        $buzon->sincronizar();
+
+        $aviso = Notificacion::query()
+            ->where('daily_activity_id', $actividad->id)
+            ->firstOrFail();
+
+        $this->assertNull($aviso->leida_en);
+
+        $plan->activities()->updateExistingPivot($actividad->id, ['is_done' => true]);
+
+        $resultado = $buzon->sincronizar();
+
+        $this->assertGreaterThanOrEqual(1, $resultado['resueltas']);
+        $this->assertNotNull($aviso->fresh()->leida_en);
     }
 
     /* ======================================================================

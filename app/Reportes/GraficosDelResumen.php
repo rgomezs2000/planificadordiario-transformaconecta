@@ -83,13 +83,13 @@ class GraficosDelResumen
         }
 
         self::texto($lienzo, $fuente, 9, self::color($lienzo, self::GRIS_TEXTO),
-            ($izquierda + $derecha) / 2, $abajo + 34,
-            'Señales de procrastinación marcadas en el día', 'centro');
+            ($izquierda + $derecha) / 2, $abajo + 46,
+            'Señales de procrastinación marcadas en el día · n = días con esa cantidad', 'centro');
 
-        if ($grupos === []) {
+        if ($grupos === [] || (int) ($analisis['global']['senales'] ?? 0) === 0) {
             self::texto($lienzo, $fuente, 11, self::color($lienzo, self::GRIS_TEXTO),
                 ($izquierda + $derecha) / 2, ($arriba + $abajo) / 2,
-                'Sin datos suficientes para el cruce', 'centro');
+                'Sin señales de procrastinación en el período: no hay cruce para graficar', 'centro');
 
             return self::binario($lienzo);
         }
@@ -119,22 +119,26 @@ class GraficosDelResumen
             $anterior = $punto;
         }
 
-        // Los puntos, con su color según lo que representan.
+        // Los puntos, con su color según lo que representan. El tamaño crece
+        // con la cantidad de días que sostienen el promedio: un punto grande es
+        // una lectura más firme que uno chico.
         foreach ($grupos as $grupo) {
             $aFavor = ($analisis['puntoCritico']['aFavor']['senales'] ?? null) === $grupo['senales'];
             $enContra = ($analisis['puntoCritico']['enContra']['senales'] ?? null) === $grupo['senales'];
 
             $color = $enContra ? self::ROJO : ($aFavor ? self::TURQUESA : self::AZUL);
-            $radio = ($aFavor || $enContra) ? 7 : 5;
+            $radio = ($aFavor || $enContra) ? 7 : min(8, 4 + (int) $grupo['dias']);
 
             $cx = (int) round($x((float) $grupo['senales']));
             $cy = (int) round($y((float) $grupo['rendimiento']));
 
             imagefilledellipse($lienzo, $cx, $cy, $radio * 2, $radio * 2, self::color($lienzo, $color));
 
-            $etiqueta = $grupo['rendimiento'].'%';
             self::texto($lienzo, $fuenteNegrita, 8, self::color($lienzo, $color),
-                $cx, $cy - 12, $etiqueta, 'centro');
+                $cx, $cy - 12, $grupo['rendimiento'].'%', 'centro');
+
+            self::texto($lienzo, $fuente, 7, self::color($lienzo, self::GRIS_TEXTO),
+                $cx, $cy + 18, 'n='.$grupo['dias'], 'centro');
         }
 
         // Los dos puntos críticos, con su cartel. Van abajo a la izquierda
@@ -293,6 +297,196 @@ class GraficosDelResumen
     }
 
     /* ==================================================================== */
+    /*  Cumplimiento de las actividades diarias */
+    /* ==================================================================== */
+
+    /**
+     * Barras horizontales: qué hábitos se sostuvieron y cuáles se postergaron.
+     *
+     * @param  array<string, mixed>  $analisis
+     */
+    public static function cumplimientoActividades(array $analisis): string
+    {
+        $filas = collect($analisis['actividadesDiarias'] ?? [])
+            ->sortByDesc('total')
+            ->take(10)
+            ->values();
+
+        $alto = max(220, 76 + $filas->count() * 44);
+
+        [$lienzo, $fuente, $fuenteNegrita] = self::lienzo($alto);
+
+        $izquierda = 300;
+        $derecha = self::ANCHO - 160;
+        $arriba = 34;
+        $abajo = $alto - 38;
+
+        if ($filas->isEmpty()) {
+            self::texto($lienzo, $fuente, 11, self::color($lienzo, self::GRIS_TEXTO),
+                self::ANCHO / 2, $alto / 2, 'Sin actividades diarias registradas en el período', 'centro');
+
+            return self::binario($lienzo);
+        }
+
+        // Rejilla vertical cada 25 %.
+        for ($pct = 0; $pct <= 100; $pct += 25) {
+            $x = (int) round($izquierda + ($pct / 100) * ($derecha - $izquierda));
+
+            imageline($lienzo, $x, $arriba, $x, $abajo, self::color($lienzo, self::GRIS_LINEA));
+
+            self::texto($lienzo, $fuente, 7.5, self::color($lienzo, self::GRIS_TEXTO),
+                $x, $abajo + 16, $pct.'%', 'centro');
+        }
+
+        foreach ($filas as $indice => $fila) {
+            $y = $arriba + ($indice * 44) + 16;
+            $nombre = mb_strimwidth((string) $fila['actividad'], 0, 42, '…');
+
+            self::texto($lienzo, $fuenteNegrita, 8.5, self::color($lienzo, self::AZUL_OSCURO),
+                14, $y + 4, $nombre, 'izquierda');
+
+            // Fondo de la barra, para ver el 100 %.
+            imagefilledrectangle($lienzo, $izquierda, $y - 8, $derecha, $y + 8,
+                self::color($lienzo, '#F1F5FA'));
+
+            $largo = ((float) $fila['pct'] / 100) * ($derecha - $izquierda);
+
+            $color = match (true) {
+                $fila['pct'] >= 80 => self::TURQUESA,
+                $fila['pct'] >= 60 => self::AZUL,
+                $fila['pct'] >= 35 => self::AMARILLO,
+                default => self::ROJO,
+            };
+
+            if ($largo > 0) {
+                imagefilledrectangle($lienzo, $izquierda, $y - 8,
+                    (int) round($izquierda + $largo), $y + 8, self::color($lienzo, $color));
+            }
+
+            self::texto($lienzo, $fuenteNegrita, 9, self::color($lienzo, $color),
+                $derecha + 10, $y + 4, $fila['pct'].'%', 'izquierda');
+
+            self::texto($lienzo, $fuente, 7, self::color($lienzo, self::GRIS_TEXTO),
+                $derecha + 10, $y + 18, $fila['hechas'].'/'.$fila['total'].' días', 'izquierda');
+
+            if (($fila['minutos_promedio'] ?? 0) > 0) {
+                self::texto($lienzo, $fuente, 7, self::color($lienzo, self::GRIS_TEXTO),
+                    $derecha + 78, $y + 18, round($fila['minutos_promedio']).' min/día', 'izquierda');
+            }
+        }
+
+        self::texto($lienzo, $fuente, 9, self::color($lienzo, self::GRIS_TEXTO),
+            ($izquierda + $derecha) / 2, $abajo + 32,
+            'Cumplimiento de cada actividad diaria · días en que estaba disponible', 'centro');
+
+        return self::binario($lienzo);
+    }
+
+    /* ==================================================================== */
+    /*  Impacto de las actividades cumplidas */
+    /* ==================================================================== */
+
+    /**
+     * Dos barras por actividad: el rendimiento de los días en que se hizo y el
+     * de los días en que no. La diferencia se escribe a la derecha.
+     *
+     * Es el cruce que responde "contra actividades que se cumplieron": qué
+     * hábitos acompañan los mejores días, sin confundir asociación con causa.
+     *
+     * @param  array<string, mixed>  $analisis
+     */
+    public static function impactoActividades(array $analisis): string
+    {
+        $filas = collect($analisis['impactoActividades'] ?? [])
+            ->filter(fn (array $fila) => $fila['diferencia'] !== null)
+            ->take(5)
+            ->values();
+
+        $alto = max(250, 84 + $filas->count() * 78);
+
+        [$lienzo, $fuente, $fuenteNegrita] = self::lienzo($alto);
+
+        $izquierda = 290;
+        $derecha = self::ANCHO - 130;
+        $arriba = 48;
+        $abajo = $alto - 36;
+
+        if ($filas->isEmpty()) {
+            self::texto($lienzo, $fuente, 11, self::color($lienzo, self::GRIS_TEXTO),
+                self::ANCHO / 2, $alto / 2,
+                'Sin días suficientes para comparar actividades cumplidas y no cumplidas', 'centro');
+
+            return self::binario($lienzo);
+        }
+
+        // Leyenda.
+        imagefilledrectangle($lienzo, 14, 12, 26, 24, self::color($lienzo, self::TURQUESA));
+        self::texto($lienzo, $fuente, 8, self::color($lienzo, self::AZUL_OSCURO),
+            32, 23, 'Días en que se hizo', 'izquierda');
+
+        imagefilledrectangle($lienzo, 190, 12, 202, 24, self::color($lienzo, self::GRIS_TEXTO));
+        self::texto($lienzo, $fuente, 8, self::color($lienzo, self::AZUL_OSCURO),
+            208, 23, 'Días en que no se hizo', 'izquierda');
+
+        // Rejilla del 0 al 100 %.
+        for ($pct = 0; $pct <= 100; $pct += 25) {
+            $x = (int) round($izquierda + ($pct / 100) * ($derecha - $izquierda));
+
+            imageline($lienzo, $x, $arriba - 6, $x, $abajo, self::color($lienzo, self::GRIS_LINEA));
+
+            self::texto($lienzo, $fuente, 7.5, self::color($lienzo, self::GRIS_TEXTO),
+                $x, $abajo + 16, $pct.'%', 'centro');
+        }
+
+        foreach ($filas as $indice => $fila) {
+            $base = $arriba + ($indice * 78);
+            $nombre = mb_strimwidth((string) $fila['actividad'], 0, 40, '…');
+
+            self::texto($lienzo, $fuenteNegrita, 8.5, self::color($lienzo, self::AZUL_OSCURO),
+                14, $base + 10, $nombre, 'izquierda');
+
+            $diferencia = (float) $fila['diferencia'];
+            $textoDiferencia = ($diferencia >= 0 ? '+' : '').$diferencia.' pts';
+
+            self::texto($lienzo, $fuenteNegrita, 8,
+                self::color($lienzo, $diferencia >= 0 ? self::TURQUESA : self::ROJO),
+                14, $base + 26, $textoDiferencia.' de rendimiento', 'izquierda');
+
+            // Barra de los días en que se hizo.
+            $yCon = $base + 40;
+            $ySin = $base + 60;
+
+            imagefilledrectangle($lienzo, $izquierda, $yCon - 7, $derecha, $yCon + 7,
+                self::color($lienzo, '#F1F5FA'));
+            imagefilledrectangle($lienzo, $izquierda, $yCon - 7,
+                (int) round($izquierda + ((float) $fila['rendimiento_con'] / 100) * ($derecha - $izquierda)),
+                $yCon + 7, self::color($lienzo, self::TURQUESA));
+
+            self::texto($lienzo, $fuenteNegrita, 8.5, self::color($lienzo, self::TURQUESA),
+                $derecha + 10, $yCon + 4, $fila['rendimiento_con'].'%', 'izquierda');
+
+            // Barra de los días en que no se hizo.
+            imagefilledrectangle($lienzo, $izquierda, $ySin - 7, $derecha, $ySin + 7,
+                self::color($lienzo, '#F1F5FA'));
+
+            if ($fila['rendimiento_sin'] !== null) {
+                imagefilledrectangle($lienzo, $izquierda, $ySin - 7,
+                    (int) round($izquierda + ((float) $fila['rendimiento_sin'] / 100) * ($derecha - $izquierda)),
+                    $ySin + 7, self::color($lienzo, self::GRIS_TEXTO));
+
+                self::texto($lienzo, $fuenteNegrita, 8.5, self::color($lienzo, self::GRIS_TEXTO),
+                    $derecha + 10, $ySin + 4, $fila['rendimiento_sin'].'%', 'izquierda');
+            }
+        }
+
+        self::texto($lienzo, $fuente, 9, self::color($lienzo, self::GRIS_TEXTO),
+            ($izquierda + $derecha) / 2, $abajo + 32,
+            'Rendimiento promedio según la actividad se haya cumplido o no · asociación, no causa', 'centro');
+
+        return self::binario($lienzo);
+    }
+
+    /* ==================================================================== */
     /*  Herramientas de dibujo */
     /* ==================================================================== */
 
@@ -303,12 +497,12 @@ class GraficosDelResumen
     }
 
     /** @return array{0: \GdImage, 1: string, 2: string} */
-    private static function lienzo(): array
+    private static function lienzo(int $alto = self::ALTO): array
     {
-        $lienzo = imagecreatetruecolor(self::ANCHO, self::ALTO);
+        $lienzo = imagecreatetruecolor(self::ANCHO, $alto);
         imagealphablending($lienzo, true);
         imagesavealpha($lienzo, true);
-        imagefilledrectangle($lienzo, 0, 0, self::ANCHO, self::ALTO, self::color($lienzo, '#FFFFFF'));
+        imagefilledrectangle($lienzo, 0, 0, self::ANCHO, $alto, self::color($lienzo, '#FFFFFF'));
 
         return [$lienzo, self::fuente(), self::fuente(true)];
     }

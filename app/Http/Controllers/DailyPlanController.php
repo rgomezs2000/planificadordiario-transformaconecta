@@ -296,6 +296,73 @@ class DailyPlanController extends Controller
     }
 
     /* ======================================================================
+     |  Cumplimiento de las actividades (vista de sólo lectura)
+     ====================================================================== */
+
+    /**
+     * Marca o desmarca las actividades diarias de un día (PATCH).
+     *
+     * Es el botón del final de "Actividades diarias" en la vista de sólo
+     * lectura. Recibe las actividades visibles con su estado y, cuando
+     * corresponde, sus minutos. No crea actividades fuera del catálogo ni
+     * acepta las que no aplican al día.
+     */
+    public function updateActivities(Request $request, int $dailyPlan): JsonResponse
+    {
+        $plan = null;
+
+        try {
+            $plan = DailyPlan::find($dailyPlan);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'buscar el diario antes de marcar las actividades', ['diario_id' => $dailyPlan]);
+        }
+
+        if (! $plan) {
+            return $this->jsonError('El diario que intentas marcar no existe.', [], 404);
+        }
+
+        $data = $request->validate([
+            'actividades' => ['required', 'array', 'min:1'],
+            'actividades.*.daily_activity_id' => [
+                'required',
+                'integer',
+                'distinct',
+                Rule::exists('daily_activities', 'id'),
+            ],
+            'actividades.*.is_done' => ['required', 'boolean'],
+            'actividades.*.minutes' => ['nullable', 'integer', 'min:0', 'max:1440'],
+        ], [
+            'actividades.required' => 'No se recibió ninguna actividad.',
+            'actividades.array' => 'Las actividades enviadas no tienen un formato válido.',
+            'actividades.min' => 'No se recibió ninguna actividad.',
+            'actividades.*.daily_activity_id.required' => 'Cada actividad necesita su identificador.',
+            'actividades.*.daily_activity_id.integer' => 'El identificador de la actividad no es válido.',
+            'actividades.*.daily_activity_id.distinct' => 'No se puede repetir la misma actividad.',
+            'actividades.*.daily_activity_id.exists' => 'Alguna de las actividades no existe en el catálogo.',
+            'actividades.*.is_done.required' => 'Cada actividad necesita indicar si se cumplió.',
+            'actividades.*.is_done.boolean' => 'El estado de la actividad no es válido.',
+            'actividades.*.minutes.integer' => 'Los minutos de la actividad no son válidos.',
+            'actividades.*.minutes.min' => 'Los minutos de la actividad no pueden ser negativos.',
+            'actividades.*.minutes.max' => 'Los minutos de la actividad no pueden superar 1440.',
+        ]);
+
+        try {
+            $resumen = $plan->markActivitiesDone($data['actividades']);
+
+            $mensaje = $resumen['updated'] > 0
+                ? 'Se guardaron las actividades: '.$resumen['done'].' de '.$resumen['total']
+                    .' marcadas como cumplidas.'
+                : 'Las actividades ya estaban como las enviaste: no hubo cambios que guardar.';
+
+            return $this->jsonSuccess($resumen, $mensaje);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'marcar las actividades del día', ['diario_id' => $dailyPlan]);
+
+            return $this->jsonError('No se pudieron guardar las actividades. Intenta de nuevo.', [], 500);
+        }
+    }
+
+    /* ======================================================================
      |  Eliminar
      ====================================================================== */
 
@@ -380,12 +447,19 @@ class DailyPlanController extends Controller
                 'textos' => RedaccionDelResumen::observaciones($analisis),
                 'titulos' => RedaccionDelResumen::titulos(),
                 'marca' => $marca,
+                'logo' => DocumentoDelDiario::logoDataUri(),
                 'graficos' => [
                     'procrastinacion' => GraficosDelResumen::dataUri(
                         GraficosDelResumen::performanceVsProcrastinacion($analisis)
                     ),
                     'dias' => GraficosDelResumen::dataUri(GraficosDelResumen::rendimientoPorDia($analisis)),
                     'energia' => GraficosDelResumen::dataUri(GraficosDelResumen::rendimientoPorEnergia($analisis)),
+                    'actividades' => GraficosDelResumen::dataUri(
+                        GraficosDelResumen::cumplimientoActividades($analisis)
+                    ),
+                    'impacto' => GraficosDelResumen::dataUri(
+                        GraficosDelResumen::impactoActividades($analisis)
+                    ),
                 ],
                 // Con un solo día también va la línea de tiempo de ese día.
                 'agenda' => $plans->count() === 1 ? $this->agendaDelResumen($plans->first()) : null,
@@ -628,6 +702,15 @@ class DailyPlanController extends Controller
             'plan_date' => ['required', 'date', $fechaUnica],
             'energy_level_id' => ['required', 'integer', 'exists:energy_levels,id'],
 
+            // Mi meta semanal: obligatoria. Se registra una sola vez por semana
+            // y los demás días la reciben cargada. El campo «actualizar» sólo
+            // llega cuando se pulsa «Cambiar meta»: sin él, la meta registrada
+            // no se vuelve a tocar.
+            'weekly_goal' => ['required', 'array'],
+            'weekly_goal.goal' => ['required', 'string', 'max:2000'],
+            'weekly_goal.why_important' => ['nullable', 'string', 'max:2000'],
+            'weekly_goal.actualizar' => ['nullable', 'boolean'],
+
             // Mis 3 objetivos principales: la sección entera es obligatoria
             'goals' => ['required', 'array', 'size:'.DailyPlan::MAX_GOALS],
             'goals.*.slot' => ['required', 'integer', 'between:1,'.DailyPlan::MAX_GOALS, 'distinct'],
@@ -642,6 +725,28 @@ class DailyPlanController extends Controller
             'schedule.*.start_time' => ['required', 'date_format:H:i'],
             'schedule.*.activity' => ['required', 'string', 'max:255'],
             'schedule.*.is_done' => ['nullable', 'boolean'],
+
+            // Actividades diarias (hábitos). Son opcionales: un día puede no
+            // marcar ninguna y eso también es un dato.
+            'activities' => ['nullable', 'array'],
+            'activities.*.daily_activity_id' => ['required_with:activities', 'integer', 'exists:daily_activities,id', 'distinct'],
+            'activities.*.is_done' => ['nullable', 'boolean'],
+            'activities.*.minutes' => ['nullable', 'integer', 'min:0', 'max:1440'],
+            'activities.*.note' => ['nullable', 'string', 'max:500'],
+
+            // Mi meta personal: el seguimiento del día.
+            'personal_done_today' => ['nullable', 'string', 'max:2000'],
+            'personal_helped' => ['nullable', 'string', 'max:2000'],
+            'personal_hard' => ['nullable', 'string', 'max:2000'],
+
+            // Reflexión de la semana: sólo se guarda el domingo.
+            'weekly_reflection' => ['nullable', 'array'],
+            'weekly_reflection.how_was_week' => ['nullable', 'string', 'max:2000'],
+            'weekly_reflection.what_achieved' => ['nullable', 'string', 'max:2000'],
+            'weekly_reflection.what_was_hard' => ['nullable', 'string', 'max:2000'],
+            'weekly_reflection.what_learned' => ['nullable', 'string', 'max:2000'],
+            'weekly_reflection.how_improved' => ['nullable', 'string', 'max:2000'],
+            'weekly_reflection.what_different' => ['nullable', 'string', 'max:2000'],
 
             // Cierre del día
             'achievements' => ['required', 'string', 'max:2000'],
@@ -687,6 +792,20 @@ class DailyPlanController extends Controller
 
             'energy_level_id.required' => 'Selecciona tu nivel de energía de hoy.',
             'energy_level_id.exists' => 'El nivel de energía seleccionado no existe.',
+
+            'weekly_goal.required' => 'Escribe la meta de esta semana.',
+            'weekly_goal.goal.required' => 'Escribe la meta de esta semana: es un campo obligatorio.',
+            'weekly_goal.goal.max' => 'La meta semanal es demasiado larga.',
+            'weekly_goal.why_important.max' => 'El porqué de tu meta es demasiado largo.',
+
+            'activities.*.daily_activity_id.exists' => 'La actividad enviada no existe en el catálogo.',
+            'activities.*.daily_activity_id.distinct' => 'No se puede repetir la misma actividad.',
+            'activities.*.minutes.max' => 'Los minutos de una actividad no pueden superar 1440.',
+            'activities.*.note.max' => 'La nota de la actividad es demasiado larga.',
+
+            'personal_done_today.max' => 'El texto de tu seguimiento personal es demasiado largo.',
+            'personal_helped.max' => 'El texto de tu seguimiento personal es demasiado largo.',
+            'personal_hard.max' => 'El texto de tu seguimiento personal es demasiado largo.',
 
             'goals.required' => 'Completa tus 3 objetivos principales de hoy.',
             'goals.size' => 'Debes registrar exactamente 3 objetivos principales.',

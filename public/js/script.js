@@ -53,6 +53,13 @@ window.Planificador = window.Planificador || {};
         /** Fecha con la que se abrió el formulario; la restituye "Limpiar". */
         fechaInicial: '',
 
+        /** Última fecha consultada para traer la meta de la semana. */
+        ultimaFechaMeta: null,
+
+        /** Valores que se cargaron solos, para no pisar lo que la persona escribe. */
+        metaCargada: { goal: '', why: '' },
+        reflexionCargada: {},
+
         /* ==================================================================
            Arranque
            ================================================================== */
@@ -73,17 +80,23 @@ window.Planificador = window.Planificador || {};
             this.iniciarFecha();
             this.iniciarHorario();
 
+            // Las casillas que habilitan minutos se enlazan en los dos modos:
+            // en la vista de sólo lectura también se pueden marcar actividades.
+            this.iniciarDetalles();
+
             if (! this.soloLectura) {
                 this.iniciarAcciones();
-                this.iniciarDetalles();
+                this.iniciarMetaSemanal();
                 this.iniciarValidacion();
                 this.iniciarGuardado();
-                this.sincronizarDetalles();
             } else {
-                // En la vista de sólo lectura las únicas casillas activas son
-                // las del horario, y se guardan con el botón de la sección.
+                // En la vista de sólo lectura se marcan el horario y las
+                // actividades desde los botones de cada sección.
                 this.iniciarCumplimiento();
+                this.iniciarCumplimientoActividades();
             }
+
+            this.sincronizarDetalles();
 
             return this;
         },
@@ -138,6 +151,8 @@ window.Planificador = window.Planificador || {};
             $dias.prop('checked', false);
 
             if (! /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+                this.seccionesPorDia(null);
+
                 return;
             }
 
@@ -145,10 +160,182 @@ window.Planificador = window.Planificador || {};
             var fecha = new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]));
 
             if (isNaN(fecha.getTime())) {
+                this.seccionesPorDia(null);
+
                 return;
             }
 
             $dias.filter('[data-dia="' + fecha.getDay() + '"]').prop('checked', true);
+
+            // Las secciones que dependen del día (sábado y domingo) y la meta
+            // de la semana de esa fecha se ajustan solas.
+            this.seccionesPorDia(fecha.getDay());
+            this.cargarMetaSemanal(valor);
+        },
+
+        /**
+         * Muestra u oculta lo que sólo aplica a un día de la semana.
+         *
+         * El sábado suma las actividades del cambio de semana; el domingo,
+         * la reflexión semanal. Los campos de una sección oculta se
+         * deshabilitan para que no viajen al guardar.
+         *
+         * @param {number|null} dia 0 = domingo … 6 = sábado; null si no hay fecha.
+         */
+        seccionesPorDia: function (dia) {
+            var self = this;
+            var letras = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+            var nombres = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+            $('[data-solo-dia]').each(function () {
+                var $bloque = $(this);
+                var solo = $.trim(String($bloque.attr('data-solo-dia')));
+
+                if (solo === '') {
+                    return;
+                }
+
+                var visible = dia !== null && parseInt(solo, 10) === dia;
+
+                $bloque.prop('hidden', !visible);
+                $bloque.find('input, textarea, select').each(function () {
+                    if (self.soloLectura) {
+                        // En la vista de sólo lectura las actividades del
+                        // sábado también se marcan y se guardan con su botón;
+                        // la reflexión, en cambio, sigue siendo de lectura.
+                        if ($bloque.hasClass('tf-actividad')) {
+                            $(this).prop('disabled', ! visible);
+                        } else {
+                            $(this).prop('disabled', true);
+                        }
+
+                        return;
+                    }
+
+                    $(this).prop('disabled', !visible);
+                });
+            });
+
+            if (dia === null) {
+                return;
+            }
+
+            $('#meta-personal-dia').text(letras[dia]);
+            $('#meta-personal-dia-nombre').text(nombres[dia]);
+
+            // Los minutos de una actividad siguen deshabilitados hasta que su
+            // casilla está marcada, aunque la sección haya quedado visible.
+            this.sincronizarDetalles();
+        },
+
+        /**
+         * Trae la meta de la semana de la fecha elegida.
+         *
+         * Si esa semana ya la tiene escrita, el formulario la muestra; si no,
+         * los campos quedan vacíos para completarlos. Sólo se rellenan campos
+         * vacíos: nunca pisa lo que la persona ya escribió.
+         */
+        cargarMetaSemanal: function (fecha) {
+            if (this.soloLectura) {
+                return this;
+            }
+
+            var url = $(this.opciones.selectorFormulario).attr('data-url-meta-semanal');
+
+            if (! url || ! /^\d{4}-\d{2}-\d{2}$/.test(String(fecha || ''))) {
+                return this;
+            }
+
+            if (fecha === this.ultimaFechaMeta) {
+                return this;
+            }
+
+            this.ultimaFechaMeta = fecha;
+
+            var self = this;
+
+            $.getJSON(url, { fecha: fecha })
+                .done(function (respuesta) {
+                    var datos = respuesta && respuesta.data ? respuesta.data : null;
+
+                    if (! datos) {
+                        return;
+                    }
+
+                    var $meta = $('#weekly_goal_goal');
+                    var $porque = $('#weekly_goal_why');
+
+                    // Se reemplaza el valor cuando el campo sigue vacío o
+                    // todavía tiene lo que se cargó solo; si la persona lo
+                    // escribió, se respeta.
+                    var metaActual = $meta.length ? $.trim(String($meta.val() || '')) : '';
+                    var porqueActual = $porque.length ? $.trim(String($porque.val() || '')) : '';
+
+                    if ($meta.length && (metaActual === '' || metaActual === self.metaCargada.goal)) {
+                        $meta.val(datos.goal || '');
+                    }
+
+                    if ($porque.length && (porqueActual === '' || porqueActual === self.metaCargada.why)) {
+                        $porque.val(datos.why_important || '');
+                    }
+
+                    self.metaCargada = {
+                        goal: $meta.length ? $.trim(String($meta.val() || '')) : '',
+                        why: $porque.length ? $.trim(String($porque.val() || '')) : ''
+                    };
+
+                    self.aplicarEstadoMeta(!! datos.goal);
+
+                    $('#meta-semanal-etiqueta').text(
+                        datos.label || 'Aún no hay meta para esta semana'
+                    );
+
+                    if (datos.goal) {
+                        $('#meta-personal-meta').html(
+                            'Tu meta de la semana: <strong>' + P.Util.escapar(datos.goal) + '</strong>'
+                        );
+                    } else {
+                        $('#meta-personal-meta').text(
+                            'La meta de la semana se muestra aquí en cuanto la escribas.'
+                        );
+                    }
+
+                    // Reflexión: las seis respuestas de esa semana. Igual que
+                    // la meta, sólo se reemplaza lo que sigue como se cargó.
+                    var respuestas = datos.reflection && datos.reflection.answers
+                        ? datos.reflection.answers
+                        : {};
+
+                    $.each([
+                        'how_was_week', 'what_achieved', 'what_was_hard',
+                        'what_learned', 'how_improved', 'what_different'
+                    ], function (i, clave) {
+                        var $campo = $('#reflexion-' + clave);
+
+                        if (! $campo.length) {
+                            return;
+                        }
+
+                        var actual = $.trim(String($campo.val() || ''));
+                        var cargado = self.reflexionCargada[clave] || '';
+
+                        if (actual === '' || actual === cargado) {
+                            $campo.val(respuestas[clave] || '');
+                        }
+
+                        self.reflexionCargada[clave] = $.trim(String($campo.val() || ''));
+                    });
+
+                    if (datos.reflection && datos.reflection.label) {
+                        $('#reflexion-semanal-etiqueta').text(datos.reflection.label);
+                    }
+                })
+                .fail(function () {
+                    // Si la consulta falla, el formulario sigue funcionando:
+                    // simplemente no precarga la meta de esa semana.
+                });
+
+            return this;
         },
 
         /* ==================================================================
@@ -404,6 +591,171 @@ window.Planificador = window.Planificador || {};
         },
 
         /* ==================================================================
+           2 ter. Actividades diarias (vista de sólo lectura)
+           ================================================================== */
+
+        /**
+         * Enlaza el botón del final de "Actividades diarias". Igual que el del
+         * horario: confirma con bootbox y guarda por AJAX contra el diario.
+         */
+        iniciarCumplimientoActividades: function () {
+            var self = this;
+
+            $('#actividades-guardar')
+                .off('click.pfActividades')
+                .on('click.pfActividades', function (evento) {
+                    evento.preventDefault();
+                    self.confirmarActividades($(this));
+                });
+        },
+
+        /** Las actividades visibles del día, con su estado y sus minutos. */
+        actividadesDelDia: function () {
+            var actividades = [];
+
+            $('tr.tf-actividad').each(function () {
+                var $fila = $(this);
+
+                if ($fila.is(':hidden')) {
+                    return;
+                }
+
+                var id = parseInt($fila.find('input[name$="[daily_activity_id]"]').val(), 10);
+
+                if (! id) {
+                    return;
+                }
+
+                var $check = $fila.find('.tf-actividad__check');
+                var $minutos = $fila.find('input[name$="[minutes]"]');
+                var minutos = null;
+
+                if ($minutos.length) {
+                    minutos = parseInt($minutos.val(), 10);
+                    minutos = isNaN(minutos) || minutos < 0 ? 0 : minutos;
+                }
+
+                actividades.push({
+                    daily_activity_id: id,
+                    is_done: $check.is(':checked') ? 1 : 0,
+                    minutes: minutos
+                });
+            });
+
+            return actividades;
+        },
+
+        /** Cuenta lo que se va a guardar y pide la confirmación. */
+        confirmarActividades: function ($boton) {
+            var self = this;
+            var actividades = this.actividadesDelDia();
+
+            if (! actividades.length) {
+                P.Alerta.info('Este diario no tiene actividades para marcar.');
+
+                return this;
+            }
+
+            var hechas = $.grep(actividades, function (actividad) {
+                return actividad.is_done === 1;
+            }).length;
+            var total = actividades.length;
+            var texto = total === 1 ? '1 actividad' : total + ' actividades';
+            var marcadas = hechas === 1 ? '1 marcada' : hechas + ' marcadas';
+
+            P.Alerta.confirmar({
+                titulo: 'Guardar las actividades del día',
+                mensaje: 'Se guardará el estado de ' + texto + ': ' + marcadas +
+                    ' como cumplidas y ' + (total - hechas) + ' sin cumplir. ¿Deseas continuar?',
+                textoAceptar: 'Sí, guardar',
+                textoCancelar: 'Cancelar',
+                claseAceptar: 'btn btn-success',
+                alAceptar: function () {
+                    self.guardarActividades($boton, actividades);
+                }
+            });
+
+            return this;
+        },
+
+        /** Envía las actividades al controlador y muestra el resultado. */
+        guardarActividades: function ($boton, actividades) {
+            var self = this;
+            var texto = $boton.html();
+
+            $boton.prop('disabled', true).html(
+                '<i class="bi bi-hourglass-split" aria-hidden="true"></i> Guardando…'
+            );
+
+            var terminar = function () {
+                $boton.prop('disabled', false).html(texto);
+            };
+
+            P.Ajax.peticion({
+                url: $boton.attr('data-url'),
+                tipo: 'PATCH',
+                datos: { actividades: actividades },
+                avisoError: false,
+                alExito: function (respuesta) {
+                    terminar();
+
+                    var datos = respuesta && respuesta.data ? respuesta.data : {};
+                    self.aplicarActividades(datos.activities);
+
+                    P.Alerta.exito(
+                        (respuesta && respuesta.message) || 'Se guardaron las actividades.',
+                        'Actividades guardadas'
+                    );
+                },
+                alError: function (xhr, mensaje) {
+                    terminar();
+
+                    P.Alerta.error(
+                        mensaje || 'No se pudieron guardar las actividades.',
+                        'Ocurrió un problema'
+                    );
+                }
+            });
+
+            return this;
+        },
+
+        /** Deja las casillas y los minutos como los devolvió el servidor. */
+        aplicarActividades: function (actividades) {
+            if (! $.isArray(actividades)) {
+                return this;
+            }
+
+            var hechos = {};
+
+            $.each(actividades, function (i, actividad) {
+                hechos[String(actividad.daily_activity_id)] = actividad;
+            });
+
+            $('tr.tf-actividad').each(function () {
+                var $fila = $(this);
+                var id = String($fila.find('input[name$="[daily_activity_id]"]').val() || '');
+                var datos = hechos[id];
+
+                if (! datos) {
+                    return;
+                }
+
+                $fila.find('.tf-actividad__check').prop('checked', !! datos.is_done);
+
+                var $minutos = $fila.find('input[name$="[minutes]"]');
+
+                if ($minutos.length) {
+                    $minutos.val(datos.minutes === null ? '' : datos.minutes);
+                }
+            });
+
+            this.sincronizarDetalles();
+
+            return this;
+        },
+
+        /* ==================================================================
            3. Casillas que habilitan su campo de texto múltiple
            ================================================================== */
 
@@ -436,6 +788,114 @@ window.Planificador = window.Planificador || {};
             $(this.opciones.selectorHabilita).each(function () {
                 self.habilitarDetalle($(this));
             });
+        },
+
+        /* ==================================================================
+           3 bis. Meta semanal: reflejo en el seguimiento personal
+           ================================================================== */
+
+        /** Mientras se escribe la meta, la sección personal muestra el texto. */
+        iniciarMetaSemanal: function () {
+            var self = this;
+
+            // Lo que ya vino cargado del servidor cuenta como "cargado solo":
+            // si se cambia de semana, se puede reemplazar sin perder nada.
+            this.metaCargada = {
+                goal: $.trim(String($('#weekly_goal_goal').val() || '')),
+                why: $.trim(String($('#weekly_goal_why').val() || ''))
+            };
+
+            this.reflexionCargada = {};
+
+            $('textarea[name^="weekly_reflection["]').each(function () {
+                var coincidencia = String($(this).attr('name') || '').match(/\[([a-z_]+)\]/);
+
+                if (coincidencia) {
+                    self.reflexionCargada[coincidencia[1]] = $.trim(String($(this).val() || ''));
+                }
+            });
+
+            // La meta registrada se muestra bloqueada; este botón la habilita
+            // y marca el campo oculto que autoriza el cambio en el servidor.
+            $('#meta-semanal-editar')
+                .off('click.pfMetaEditar')
+                .on('click.pfMetaEditar', function () {
+                    $('#weekly_goal_goal, #weekly_goal_why').prop('readonly', false);
+                    $('#weekly_goal_actualizar').val('1');
+                    $(this).hide();
+
+                    $('#meta-semanal-tag')
+                        .text('Editando')
+                        .removeClass('tf-obligatorio-tag--suave');
+
+                    $('#meta-semanal-nota').text(
+                        'Editando la meta de la semana: el cambio vale para todos sus días.'
+                    );
+
+                    $('#weekly_goal_goal').trigger('focus');
+                });
+
+            this.aplicarEstadoMeta($.trim(String($('#weekly_goal_goal').val() || '')) !== '');
+
+            $('#weekly_goal_goal')
+                .off('input.pfMeta')
+                .on('input.pfMeta', function () {
+                    self.reflejarMetaSemanal($(this).val());
+                });
+        },
+
+        /**
+         * Deja la sección de la meta en su estado: registrada (bloqueada, con
+         * el botón para cambiarla) o pendiente (editable y obligatoria).
+         */
+        aplicarEstadoMeta: function (registrada) {
+            var $goal = $('#weekly_goal_goal');
+            var $why = $('#weekly_goal_why');
+            var $boton = $('#meta-semanal-editar');
+            var $tag = $('#meta-semanal-tag');
+            var $etiqueta = $('#weekly_goal_goal_label');
+            var $nota = $('#meta-semanal-nota');
+
+            $('#weekly_goal_actualizar').val('0');
+
+            if (this.soloLectura) {
+                $goal.prop('readonly', true);
+                $why.prop('readonly', true);
+
+                return this;
+            }
+
+            $goal.prop('readonly', registrada);
+            $why.prop('readonly', registrada);
+            $etiqueta.toggleClass('tf-obligatorio', ! registrada);
+            $boton.prop('hidden', ! registrada).toggle(registrada);
+
+            if (registrada) {
+                $tag.text('Registrada').addClass('tf-obligatorio-tag--suave');
+                $nota.text(
+                    'Ya está registrada para esta semana: se usa en todos sus días. '
+                    + 'Si necesitas cambiarla, pulsa «Cambiar meta de la semana».'
+                );
+            } else {
+                $tag.text('Obligatorio').removeClass('tf-obligatorio-tag--suave');
+                $nota.text(
+                    'Aún no hay meta para esta semana: escríbela y se compartirá con todos sus días.'
+                );
+            }
+
+            return this;
+        },
+
+        reflejarMetaSemanal: function (texto) {
+            texto = $.trim(String(texto || ''));
+
+            if (texto === '') {
+                $('#meta-personal-meta').text('La meta de la semana se muestra aquí en cuanto la escribas.');
+
+                return;
+            }
+
+            $('#meta-personal-meta').html('Tu meta de la semana: <strong>' + P.Util.escapar(texto) + '</strong>');
         },
 
         /* ==================================================================
@@ -483,6 +943,9 @@ window.Planificador = window.Planificador || {};
             this.sincronizarDetalles();
             this.limpiarErrores();
             this.mostrarErrores([]);
+            this.ultimaFechaMeta = null;
+            this.reflejarMetaSemanal('');
+            this.aplicarEstadoMeta($.trim(String($('#weekly_goal_goal').val() || '')) !== '');
             this.marcarDia();
 
             // El gráfico se rehace solo con los cambios del horario, pero aquí
@@ -508,6 +971,11 @@ window.Planificador = window.Planificador || {};
                 { campo: '#plan_date', mensaje: 'Selecciona la fecha del diario.' },
                 { campo: 'input[name="energy_level_id"]', mensaje: 'Selecciona tu nivel de energía de hoy.' }
             ];
+
+            lista.push({
+                campo: '#weekly_goal_goal',
+                mensaje: 'Escribe la meta de esta semana: es un campo obligatorio.'
+            });
 
             $('input[name^="goals["][name$="[description]"]').each(function (indice) {
                 lista.push({

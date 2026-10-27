@@ -24,6 +24,9 @@ final class Candidata
     /** Franja del horario cuya hora ya pasó sin marcarse. */
     public const TIPO_FRANJA = 'franja';
 
+    /** Actividad diaria (hábito) que todavía no se marcó. */
+    public const TIPO_ACTIVIDAD = 'actividad';
+
     /** El día transcurre y todavía no tiene diario cargado. */
     public const TIPO_DIARIO_AUSENTE = 'diario_ausente';
 
@@ -34,6 +37,7 @@ final class Candidata
     public const TIPOS = [
         self::TIPO_OBJETIVO => 'Objetivo',
         self::TIPO_FRANJA => 'Franja horaria',
+        self::TIPO_ACTIVIDAD => 'Actividad diaria',
         self::TIPO_DIARIO_AUSENTE => 'Diario del día',
         self::TIPO_SISTEMA => 'Sistema',
     ];
@@ -59,6 +63,7 @@ final class Candidata
         public readonly ?int $dailyPlanId = null,
         public readonly ?int $planGoalId = null,
         public readonly ?int $scheduleEntryId = null,
+        public readonly ?int $dailyActivityId = null,
         public readonly array $meta = [],
         ?string $uuid = null,
     ) {
@@ -98,6 +103,7 @@ final class Candidata
             'daily_plan_id' => $this->dailyPlanId,
             'plan_goal_id' => $this->planGoalId,
             'schedule_entry_id' => $this->scheduleEntryId,
+            'daily_activity_id' => $this->dailyActivityId,
             'meta' => $this->meta,
             'sincronizada_en' => null,
             'error_firestore' => null,

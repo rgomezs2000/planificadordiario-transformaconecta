@@ -36,8 +36,10 @@ class DailyPlan extends Model
     /** Relaciones que forman un día completo (para eager loading). */
     public const FULL_RELATIONS = [
         'energyLevel',
+        'weeklyGoal',
         'goals.goalType',
         'scheduleEntries.scheduleSlot',
+        'activities',
         'actionBlocks.duration',
         'actionBlocks.outcome',
         'notes',
@@ -51,6 +53,10 @@ class DailyPlan extends Model
     protected $fillable = [
         'plan_date',
         'energy_level_id',
+        'weekly_goal_id',
+        'personal_done_today',
+        'personal_helped',
+        'personal_hard',
         'achievements',
         'pending',
         'pending_when',
@@ -71,6 +77,49 @@ class DailyPlan extends Model
     public function energyLevel(): BelongsTo
     {
         return $this->belongsTo(EnergyLevel::class);
+    }
+
+    /** La meta de la semana a la que pertenece este día. */
+    public function weeklyGoal(): BelongsTo
+    {
+        return $this->belongsTo(WeeklyGoal::class);
+    }
+
+    /**
+     * La meta de la semana del día, con respaldo por fecha.
+     *
+     * Los diarios viejos no tienen `weekly_goal_id`, pero si otro día de su
+     * misma semana ya escribió la meta, les corresponde igual. El respaldo
+     * hace que el PDF y los reportes la muestren sin migrar los datos.
+     */
+    public function metaSemanal(): ?WeeklyGoal
+    {
+        return $this->weeklyGoal
+            ?? ($this->plan_date ? WeeklyGoal::forDate($this->plan_date) : null);
+    }
+
+    /**
+     * Las actividades diarias marcadas, con sus minutos y su nota.
+     * Se ordenan por el catálogo para que la hoja y la pantalla coincidan.
+     */
+    public function activities(): BelongsToMany
+    {
+        return $this->belongsToMany(DailyActivity::class, 'daily_plan_activity')
+            ->withPivot(['is_done', 'minutes', 'note'])
+            ->withTimestamps()
+            ->orderBy('daily_activities.sort_order')
+            ->orderBy('daily_activities.id');
+    }
+
+    /**
+     * La reflexión de la semana de este día.
+     *
+     * No es una relación de Eloquent porque la identidad de la reflexión es el
+     * lunes de la semana, no el id del diario: se busca en cada consulta.
+     */
+    public function reflexionSemanal(): ?WeeklyReflection
+    {
+        return $this->plan_date ? WeeklyReflection::forDate($this->plan_date) : null;
     }
 
     /** Los 3 objetivos del día, siempre ordenados por su ranura 1-2-3. */
@@ -162,6 +211,14 @@ class DailyPlan extends Model
                 ->orWhere('pending', 'like', $like)
                 ->orWhere('pending_when', 'like', $like)
                 ->orWhere('proud_of', 'like', $like)
+                ->orWhere('personal_done_today', 'like', $like)
+                ->orWhere('personal_helped', 'like', $like)
+                ->orWhere('personal_hard', 'like', $like)
+                ->orWhereHas('weeklyGoal', fn (Builder $meta) => $meta
+                    ->where('goal', 'like', $like)
+                    ->orWhere('why_important', 'like', $like))
+                ->orWhereHas('activities', fn (Builder $actividades) => $actividades
+                    ->where('daily_activities.name', 'like', $like))
                 ->orWhereHas('goals', fn (Builder $goals) => $goals->where('description', 'like', $like))
                 ->orWhereHas('scheduleEntries', fn (Builder $franjas) => $franjas->where('activity', 'like', $like))
                 ->orWhereHas('actionBlocks', fn (Builder $bloques) => $bloques->where('task', 'like', $like))
@@ -280,6 +337,11 @@ class DailyPlan extends Model
     {
         return static::query()
             ->with('energyLevel')
+            ->withCount([
+                'activities',
+                'activities as activities_done_count' => fn (Builder $query) => $query
+                    ->where('daily_plan_activity.is_done', true),
+            ])
             ->filtrado($filtros)
             ->orderBy('plan_date')
             ->get();
@@ -298,6 +360,8 @@ class DailyPlan extends Model
         return static::query()
             ->with([
                 'energyLevel',
+                'weeklyGoal',
+                'activities',
                 'preparationItems',
                 'reflectionAnswers.question',
                 'actionBlocks.duration',
@@ -349,6 +413,9 @@ class DailyPlan extends Model
             $plan = static::create([
                 'plan_date' => Helper::toCarbon($data['plan_date']),
                 'energy_level_id' => $data['energy_level_id'] ?? null,
+                'personal_done_today' => $data['personal_done_today'] ?? null,
+                'personal_helped' => $data['personal_helped'] ?? null,
+                'personal_hard' => $data['personal_hard'] ?? null,
                 'achievements' => $data['achievements'] ?? null,
                 'pending' => $data['pending'] ?? null,
                 'pending_when' => $data['pending_when'] ?? null,
@@ -357,6 +424,10 @@ class DailyPlan extends Model
 
             $plan->refreshDayStructure();
             $plan->applyDayData($data);
+
+            // Si la semana ya tenía meta (por ejemplo, el diario del lunes), el
+            // día nuevo queda vinculado a ella aunque el formulario no la repita.
+            $plan->vincularMetaSemanal();
 
             return $plan->fresh(self::FULL_RELATIONS);
         }, 'crear el día', ['plan_date' => $data['plan_date'] ?? null]);
@@ -372,7 +443,16 @@ class DailyPlan extends Model
                 $attributes['plan_date'] = Helper::toCarbon($data['plan_date']);
             }
 
-            foreach (['energy_level_id', 'achievements', 'pending', 'pending_when', 'proud_of'] as $key) {
+            foreach ([
+                'energy_level_id',
+                'personal_done_today',
+                'personal_helped',
+                'personal_hard',
+                'achievements',
+                'pending',
+                'pending_when',
+                'proud_of',
+            ] as $key) {
                 if (array_key_exists($key, $data)) {
                     $attributes[$key] = $data[$key];
                 }
@@ -383,6 +463,11 @@ class DailyPlan extends Model
             }
 
             $this->applyDayData($data);
+
+            // Si el día cambió de semana, la meta semanal tiene que cambiar con
+            // él; el formulario la manda de nuevo, pero una petición parcial
+            // (o la importación) no debería dejar el vínculo viejo.
+            $this->vincularMetaSemanal();
 
             // El PDF y el JPG guardados ya no representan al día: se borran y
             // se vuelven a generar la próxima vez que se pidan.
@@ -467,6 +552,102 @@ class DailyPlan extends Model
     }
 
     /**
+     * Marca o desmarca las actividades diarias desde la vista de sólo lectura.
+     *
+     * Recibe las actividades con su estado y, cuando corresponde, sus minutos.
+     * Sólo toca las que pertenecen a este día. Si algo cambió, borra el PDF y
+     * la imagen guardados para que se vuelvan a generar con el estado nuevo.
+     *
+     * @param  array<int, array{daily_activity_id?: mixed, is_done?: mixed, minutes?: mixed}>  $filas
+     * @return array<string, mixed>
+     */
+    public function markActivitiesDone(array $filas): array
+    {
+        return static::enTransaccion(function () use ($filas) {
+            $ids = collect($filas)
+                ->pluck('daily_activity_id')
+                ->map(fn (mixed $id) => (int) $id)
+                ->unique()
+                ->all();
+
+            $catalogo = DailyActivity::query()->whereIn('id', $ids)->get()->keyBy('id');
+            $actuales = $this->activities()->get()->keyBy('id');
+            $cambios = 0;
+
+            foreach ($filas as $fila) {
+                $id = (int) ($fila['daily_activity_id'] ?? 0);
+                /** @var DailyActivity|null $actividad */
+                $actividad = $catalogo->get($id);
+
+                // Sólo se aceptan actividades del catálogo que apliquen al día:
+                // el cambio de sábanas no se puede marcar un martes.
+                if (! $actividad || ! $actividad->aplicaA($this->plan_date)) {
+                    continue;
+                }
+
+                $hecho = (bool) ($fila['is_done'] ?? false);
+
+                $minutos = $actividad->requires_minutes && $hecho
+                    ? max(0, min(1440, (int) ($fila['minutes'] ?? 0)))
+                    : null;
+
+                $pivote = $actuales->get($id)?->pivot;
+
+                // Un diario viejo puede no tener la fila de la actividad: se
+                // crea al marcarla, sin tocar el resto del día.
+                if (! $pivote) {
+                    $this->activities()->attach($id, [
+                        'is_done' => $hecho,
+                        'minutes' => $minutos ?: null,
+                    ]);
+
+                    $cambios++;
+
+                    continue;
+                }
+
+                $antesHecho = (bool) $pivote->is_done;
+                $antesMinutos = (int) ($pivote->minutes ?? 0);
+
+                if ($antesHecho === $hecho && (! $hecho || $antesMinutos === (int) $minutos)) {
+                    continue;
+                }
+
+                $this->activities()->updateExistingPivot($id, [
+                    'is_done' => $hecho,
+                    'minutes' => $minutos ?: null,
+                ]);
+
+                $cambios++;
+            }
+
+            if ($cambios > 0) {
+                DocumentoDelDiario::de($this)->limpiar();
+            }
+
+            $this->load(['activities']);
+
+            $hechas = $this->activities->filter(fn (DailyActivity $a) => (bool) $a->pivot->is_done);
+            $total = $this->activities->count();
+
+            return [
+                'updated' => $cambios,
+                'done' => $hechas->count(),
+                'total' => $total,
+                'percent' => Helper::percentageOf($hechas->count(), $total),
+                'activities' => $this->activities->map(fn (DailyActivity $actividad) => [
+                    'daily_activity_id' => $actividad->id,
+                    'is_done' => (bool) $actividad->pivot->is_done,
+                    'minutes' => $actividad->pivot->minutes !== null
+                        ? (int) $actividad->pivot->minutes
+                        : null,
+                ])->values()->all(),
+                'progress' => $this->progressSummary(),
+            ];
+        }, 'marcar las actividades del día', ['diario_id' => $this->id]);
+    }
+
+    /**
      * Elimina el día; las claves foráneas en cascada limpian sus hijos.
      *
      * También se lleva los archivos generados en el almacenamiento privado (el
@@ -499,19 +680,26 @@ class DailyPlan extends Model
         $this->generateScheduleEntries();
         $this->generatePreparationItems();
         $this->generateReflectionAnswers();
+        $this->generateActivities();
     }
 
     /* ======================================================================
      |  Resúmenes para las respuestas
      ====================================================================== */
 
-    /** Resumen de avance del día (objetivos, horario y minutos de foco). */
+    /** Resumen de avance del día (objetivos, horario, actividades y minutos). */
     public function progressSummary(): array
     {
         $goalsDone = $this->goals->where('is_done', true)->count();
         $goalsTotal = $this->goals->count();
         $entriesDone = $this->scheduleEntries->where('is_done', true)->count();
         $entriesTotal = $this->scheduleEntries->count();
+
+        $activities = $this->relationLoaded('activities') ? $this->activities : $this->activities()->get();
+        $activitiesDone = $activities->filter(fn (DailyActivity $a) => (bool) $a->pivot->is_done)->count();
+        $activitiesTotal = $activities->count();
+        $activityMinutes = (int) $activities->sum(fn (DailyActivity $a) => (int) ($a->pivot->minutes ?? 0));
+
         $focusMinutes = (int) $this->actionBlocks->sum(
             fn (ActionBlock $block) => $block->duration?->minutes ?? 0
         );
@@ -523,6 +711,11 @@ class DailyPlan extends Model
             'schedule_done' => $entriesDone,
             'schedule_total' => $entriesTotal,
             'schedule_percent' => Helper::percentageOf($entriesDone, $entriesTotal),
+            'activities_done' => $activitiesDone,
+            'activities_total' => $activitiesTotal,
+            'activities_percent' => Helper::percentageOf($activitiesDone, $activitiesTotal),
+            'activity_minutes' => $activityMinutes,
+            'activity_minutes_label' => $activityMinutes > 0 ? Helper::minutesToHuman($activityMinutes) : null,
             'focus_minutes' => $focusMinutes,
             'focus_label' => Helper::minutesToHuman($focusMinutes),
             'is_closed' => $this->isClosed(),
@@ -544,6 +737,8 @@ class DailyPlan extends Model
             'goals_count' => (int) ($this->goals_count ?? 0),
             'goals_done_count' => (int) ($this->goals_done_count ?? 0),
             'action_blocks_count' => (int) ($this->action_blocks_count ?? 0),
+            'activities_count' => (int) ($this->activities_count ?? 0),
+            'activities_done_count' => (int) ($this->activities_done_count ?? 0),
             'notes_count' => (int) ($this->notes_count ?? 0),
             'is_closed' => $this->isClosed(),
         ];
@@ -560,6 +755,8 @@ class DailyPlan extends Model
     {
         $this->loadMissing([
             'energyLevel',
+            'weeklyGoal',
+            'activities',
             'preparationItems',
             'reflectionAnswers.question',
             'actionBlocks.duration',
@@ -576,6 +773,35 @@ class DailyPlan extends Model
 
         $siNo = fn (bool $marcado): string => $marcado ? 'Sí' : 'No';
 
+        $meta = $this->metaSemanal();
+
+        // Actividades: una línea por actividad, con sus minutos cuando los pide.
+        $actividades = $this->activities
+            ->map(function (DailyActivity $actividad) {
+                $texto = ((bool) $actividad->pivot->is_done ? 'Sí' : 'No').' · '.$actividad->name;
+
+                if ($actividad->pivot->minutes !== null && (int) $actividad->pivot->minutes > 0) {
+                    $texto .= ' ('.(int) $actividad->pivot->minutes.' min)';
+                }
+
+                return $texto;
+            })
+            ->implode("\n");
+
+        $minutosActividades = (int) $this->activities->sum(fn (DailyActivity $a) => (int) ($a->pivot->minutes ?? 0));
+        $actividadesHechas = $this->activities->filter(fn (DailyActivity $a) => (bool) $a->pivot->is_done)->count();
+        $actividadesTotal = $this->activities->count();
+
+        // Reflexión semanal: es del domingo. En los demás días del período la
+        // columna queda vacía, aunque la semana tenga su reflexión escrita.
+        $reflexion = $this->plan_date->isSunday() ? $this->reflexionSemanal() : null;
+        $reflexionTexto = $reflexion
+            ? collect($reflexion->respuestas())
+                ->filter(fn (array $fila) => ! Helper::isBlank($fila['respuesta']))
+                ->map(fn (array $fila) => $fila['pregunta'].' '.Helper::strip($fila['respuesta']))
+                ->implode("\n")
+            : '';
+
         return [
             // Se usa para el formato de fecha de la primera columna.
             'date' => $this->plan_date,
@@ -584,6 +810,10 @@ class DailyPlan extends Model
             'cells' => [
                 Helper::dayName($this->plan_date, capitalize: true),
                 $this->energyLevel?->name,
+
+                // Mi meta semanal.
+                Helper::strip($meta?->goal),
+                Helper::strip($meta?->why_important),
 
                 // Mis 3 objetivos principales de hoy.
                 $objetivo(1),
@@ -600,6 +830,19 @@ class DailyPlan extends Model
                 $bloques->map(fn (ActionBlock $b) => $b->duration?->label)->filter()->implode("\n"),
                 $bloques->map(fn (ActionBlock $b) => $b->outcome?->name)->filter()->implode("\n"),
                 $bloques->map(fn (ActionBlock $b) => Helper::strip($b->task))->filter()->implode("\n"),
+
+                // Actividades diarias y su avance.
+                $actividades,
+                $minutosActividades > 0 ? $minutosActividades : '',
+                Helper::percentageOf($actividadesHechas, $actividadesTotal),
+
+                // Mi meta personal: el seguimiento del día.
+                Helper::strip($this->personal_done_today),
+                Helper::strip($this->personal_helped),
+                Helper::strip($this->personal_hard),
+
+                // Reflexión de la semana (sólo domingo).
+                $reflexionTexto,
 
                 // Cierre del día: cada pregunta en su propia columna.
                 Helper::strip($this->achievements),
@@ -619,6 +862,8 @@ class DailyPlan extends Model
     public function toDetailArray(): array
     {
         $this->loadMissing(self::FULL_RELATIONS);
+        $reflexion = $this->plan_date->isSunday() ? $this->reflexionSemanal() : null;
+        $meta = $this->metaSemanal();
 
         return [
             'id' => $this->id,
@@ -636,6 +881,35 @@ class DailyPlan extends Model
                 'pending_when' => $this->pending_when,
                 'proud_of' => $this->proud_of,
             ],
+            'weekly_goal' => $meta ? [
+                'id' => $meta->id,
+                'week_start' => Helper::date($meta->week_start, 'Y-m-d'),
+                'label' => $meta->etiqueta(),
+                'goal' => $meta->goal,
+                'why_important' => $meta->why_important,
+            ] : null,
+            'personal_followup' => [
+                'done_today' => $this->personal_done_today,
+                'helped' => $this->personal_helped,
+                'hard' => $this->personal_hard,
+            ],
+            'activities' => $this->activities->map(fn (DailyActivity $actividad) => [
+                'id' => $actividad->id,
+                'clave' => $actividad->clave,
+                'name' => $actividad->name,
+                'icon' => $actividad->icon,
+                'category' => $actividad->category,
+                'category_label' => $actividad->categoriaLabel(),
+                'requires_minutes' => (bool) $actividad->requires_minutes,
+                'is_done' => (bool) $actividad->pivot->is_done,
+                'minutes' => $actividad->pivot->minutes !== null ? (int) $actividad->pivot->minutes : null,
+                'note' => $actividad->pivot->note,
+            ])->all(),
+            'weekly_reflection' => $reflexion ? [
+                'week_start' => Helper::date($reflexion->week_start, 'Y-m-d'),
+                'label' => $reflexion->etiqueta(),
+                'answers' => $reflexion->respuestas(),
+            ] : null,
             'goals' => $this->goals->map(fn (PlanGoal $goal) => [
                 'id' => $goal->id,
                 'slot' => $goal->slot,
@@ -718,6 +992,194 @@ class DailyPlan extends Model
         }
     }
 
+    /* ======================================================================
+     |  Internos: meta semanal, actividades y reflexión de la semana
+     ====================================================================== */
+
+    /**
+     * Guarda la meta de la semana y vincula el día con ella.
+     *
+     * La meta es de la semana, no del día: si el lunes ya la escribió, el
+     * martes la reutiliza en vez de crear otra.
+     */
+    /**
+     * Guarda la meta de la semana y vincula el día con ella.
+     *
+     * La meta se registra **una sola vez por semana**. Si la semana ya tiene
+     * una, los diarios siguientes se limitan a vincularse: no la vuelven a
+     * registrar ni la pisan. Para cambiarla hay que pedirlo explícitamente con
+     * `weekly_goal[actualizar]` (lo hace el botón «Cambiar meta» del formulario).
+     * Al empezar una semana nueva no existe fila para ese lunes, así que se
+     * registra una meta nueva.
+     */
+    protected function syncWeeklyGoal(array $meta): void
+    {
+        if (! $this->plan_date) {
+            return;
+        }
+
+        $existente = WeeklyGoal::forDate($this->plan_date);
+        $actualizar = (bool) ($meta['actualizar'] ?? false);
+
+        if ($existente) {
+            if ($actualizar) {
+                $goal = Helper::strip($meta['goal'] ?? null);
+
+                if ($goal !== '') {
+                    $cambios = ['goal' => $goal];
+
+                    if (array_key_exists('why_important', $meta)) {
+                        $cambios['why_important'] = Helper::strip($meta['why_important']) ?: null;
+                    }
+
+                    $existente->update($cambios);
+                }
+            }
+
+            $this->vincularMetaSemanal();
+
+            return;
+        }
+
+        if (array_key_exists('goal', $meta) || array_key_exists('why_important', $meta)) {
+            $guardada = WeeklyGoal::guardarParaFecha(
+                $this->plan_date,
+                $meta['goal'] ?? null,
+                $meta['why_important'] ?? null
+            );
+
+            if ($guardada) {
+                if ((int) $this->weekly_goal_id !== (int) $guardada->id) {
+                    $this->forceFill(['weekly_goal_id' => $guardada->id])->save();
+                }
+
+                $this->setRelation('weeklyGoal', $guardada);
+
+                return;
+            }
+        }
+
+        $this->vincularMetaSemanal();
+    }
+
+    /** Deja el vínculo apuntando a la meta que corresponde a la semana del día. */
+    protected function vincularMetaSemanal(): void
+    {
+        if (! $this->plan_date) {
+            return;
+        }
+
+        $meta = WeeklyGoal::forDate($this->plan_date);
+        $id = $meta?->id;
+
+        if ((int) $this->weekly_goal_id !== (int) ($id ?? 0)) {
+            $this->forceFill(['weekly_goal_id' => $id])->save();
+        }
+
+        $this->setRelation('weeklyGoal', $meta);
+    }
+
+    /**
+     * Actividades del día: marca, minutos y nota.
+     *
+     * La lista enviada no es obligatoria: lo que no venga se queda como estaba
+     * (así el botón de la vista de sólo lectura puede mandar sólo una parte).
+     * Lo que sí se limpia es lo que dejó de aplicar al día si cambió la fecha:
+     * el cambio de sábanas sólo pertenece al sábado.
+     */
+    protected function syncActivities(array $actividades): void
+    {
+        if (! $this->plan_date) {
+            return;
+        }
+
+        $ids = collect($actividades)
+            ->pluck('daily_activity_id')
+            ->filter()
+            ->map(fn (mixed $id) => (int) $id)
+            ->unique()
+            ->all();
+
+        $catalogo = DailyActivity::query()->whereIn('id', $ids)->get()->keyBy('id');
+
+        foreach ($actividades as $fila) {
+            $id = (int) ($fila['daily_activity_id'] ?? 0);
+            /** @var DailyActivity|null $actividad */
+            $actividad = $catalogo->get($id);
+
+            if (! $actividad) {
+                continue;
+            }
+
+            $hecho = (bool) ($fila['is_done'] ?? false);
+            $pivote = ['is_done' => $hecho];
+
+            if (array_key_exists('minutes', $fila)) {
+                $minutos = $hecho && $actividad->requires_minutes
+                    ? max(0, min(1440, (int) ($fila['minutes'] ?: 0)))
+                    : null;
+
+                $pivote['minutes'] = $minutos ?: null;
+            }
+
+            if (array_key_exists('note', $fila)) {
+                $pivote['note'] = Helper::strip($fila['note']) ?: null;
+            }
+
+            $this->activities()->syncWithoutDetaching([$id => $pivote]);
+        }
+
+        // Si el día cambió de fecha, las actividades que ya no le tocan se van.
+        $sobrantes = $this->activities()
+            ->get()
+            ->reject(fn (DailyActivity $actividad) => $actividad->aplicaA($this->plan_date))
+            ->pluck('id')
+            ->all();
+
+        if ($sobrantes !== []) {
+            $this->activities()->detach($sobrantes);
+        }
+    }
+
+    /**
+     * Reflexión de la semana: sólo se guarda el domingo, que es cuando se
+     * cierra la semana. Se identifica por el lunes de esa semana.
+     */
+    protected function syncWeeklyReflection(array $respuestas): void
+    {
+        if (! $this->plan_date || ! $this->plan_date->isSunday()) {
+            return;
+        }
+
+        $semana = Helper::startOfWeek($this->plan_date);
+
+        if (! $semana) {
+            return;
+        }
+
+        $valores = [];
+
+        foreach (array_keys(WeeklyReflection::PREGUNTAS) as $clave) {
+            if (array_key_exists($clave, $respuestas)) {
+                $texto = trim((string) ($respuestas[$clave] ?? ''));
+                $valores[$clave] = $texto !== '' ? $texto : null;
+            }
+        }
+
+        if ($valores === []) {
+            return;
+        }
+
+        $existente = WeeklyReflection::forDate($this->plan_date);
+        $tieneTexto = collect($valores)->contains(fn (mixed $valor) => $valor !== null);
+
+        if (! $existente && ! $tieneTexto) {
+            return;
+        }
+
+        WeeklyReflection::updateOrCreate(['week_start' => $semana->toDateString()], $valores);
+    }
+
     /** Crea las filas del checklist "ANTES DE EMPEZAR" que falten. */
     protected function generatePreparationItems(): void
     {
@@ -741,6 +1203,40 @@ class DailyPlan extends Model
         });
     }
 
+    /**
+     * Crea las filas de las actividades que aplican a este día.
+     *
+     * Las de todos los días van siempre; las de la semana (el cambio de sábanas
+     * y toallas del sábado) sólo el día que les toca. Es idempotente: no repite
+     * la que ya está.
+     */
+    protected function generateActivities(): void
+    {
+        $fecha = $this->plan_date;
+
+        if (! $fecha) {
+            return;
+        }
+
+        $actividades = DailyActivity::active()
+            ->forWeekday((int) $fecha->dayOfWeek)
+            ->get(['id']);
+
+        if ($actividades->isEmpty()) {
+            return;
+        }
+
+        $existentes = $this->activities()->pluck('daily_activities.id')->all();
+
+        $faltantes = $actividades
+            ->reject(fn (DailyActivity $actividad) => in_array($actividad->id, $existentes, true))
+            ->mapWithKeys(fn (DailyActivity $actividad) => [$actividad->id => ['is_done' => false]]);
+
+        if ($faltantes->isNotEmpty()) {
+            $this->activities()->syncWithoutDetaching($faltantes->all());
+        }
+    }
+
     /* ======================================================================
      |  Internos: sincronización con el formulario
      ====================================================================== */
@@ -748,12 +1244,24 @@ class DailyPlan extends Model
     /** Aplica los datos del formulario. Solo procesa las claves presentes. */
     protected function applyDayData(array $data): void
     {
+        if (array_key_exists('weekly_goal', $data)) {
+            $this->syncWeeklyGoal((array) $data['weekly_goal']);
+        }
+
         if (array_key_exists('goals', $data)) {
             $this->syncGoals((array) $data['goals']);
         }
 
         if (array_key_exists('schedule', $data)) {
             $this->syncScheduleActivities((array) $data['schedule']);
+        }
+
+        if (array_key_exists('activities', $data)) {
+            $this->syncActivities((array) $data['activities']);
+        }
+
+        if (array_key_exists('weekly_reflection', $data)) {
+            $this->syncWeeklyReflection((array) $data['weekly_reflection']);
         }
 
         if (array_key_exists('preparation', $data)) {

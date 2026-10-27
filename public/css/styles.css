@@ -646,7 +646,7 @@ a:hover {
 
 @media (min-width: 768px) {
     .tc-resumen {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 }
 
@@ -2206,6 +2206,227 @@ textarea.form-control {
 .tf-corrida__barra .progress-bar {
     font-size: 0.85rem;
     font-weight: 700;
+}
+
+/* --- Pie --- */
+.tc-pie__cuerpo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.tc-pie__titulo {
+    color: var(--tc-blanco);
+    font-size: 0.84rem;
+    letter-spacing: 0.08em;
+}
+
+.tc-pie__lema {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.tc-pie__futuro {
+    color: var(--tc-arena);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+}
+
+.tc-pie__programa {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.7rem;
+}
+
+/* ==========================================================================
+   9 bis. NUEVAS SECCIONES DEL DIARIO
+   --------------------------------------------------------------------------
+   · El logotipo real en la cabecera.
+   · La banda con el lema "Mi rutina me fortalece".
+   · Mi meta semanal y su seguimiento personal.
+   · La tabla de actividades diarias.
+   ========================================================================== */
+
+/* --- Logotipo y banda de la cabecera --- */
+.tc-marca {
+    text-decoration: none;
+}
+
+.tc-marca:hover .tc-marca__logo,
+.tc-marca:focus-visible .tc-marca__logo {
+    transform: scale(1.03);
+}
+
+.tc-marca__logo {
+    display: block;
+    height: clamp(2.6rem, 2rem + 1.8vw, 3.8rem);
+    width: auto;
+    max-height: none;
+    transition: transform var(--tc-transicion);
+}
+
+.tc-cabecera__banda {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    line-height: 1.2;
+    letter-spacing: 0.14em;
+}
+
+.tc-cabecera__banda-titulo {
+    font-size: clamp(0.66rem, 0.58rem + 0.4vw, 0.98rem);
+    font-weight: 800;
+}
+
+.tc-cabecera__banda-lema {
+    font-size: clamp(0.5rem, 0.45rem + 0.25vw, 0.68rem);
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    opacity: 0.92;
+}
+
+.tf-obligatorio-tag--suave {
+    background: var(--tc-turquesa-tenue);
+    color: var(--tc-turquesa-oscuro);
+}
+
+/* --- Mi meta semanal --- */
+.tf-meta__cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.tf-meta__semana {
+    display: inline-block;
+    margin-bottom: 0.4rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: var(--tc-celeste-tenue);
+    color: var(--tc-azul-profundo);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.tf-meta__campo {
+    font-size: 0.9rem;
+}
+
+/* Botón para desbloquear la meta ya registrada de la semana. */
+.tf-meta__editar {
+    margin-top: 0.6rem;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.8rem;
+}
+
+/* El símbolo del día actual dentro de "Mi meta personal". */
+.tf-meta__dia {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--tc-azul);
+    color: var(--tc-blanco);
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.tf-meta__dia-nombre {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--tc-gris-500);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+/* --- Actividades diarias --- */
+.tf-actividades {
+    font-size: 0.85rem;
+}
+
+.tf-actividades thead th {
+    padding: 0.4rem 0.35rem;
+    border-bottom: 0;
+    background: var(--tc-turquesa);
+    color: var(--tc-blanco);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tf-actividades__col-minutos {
+    width: 8.5rem;
+}
+
+.tf-actividades__col-hecho {
+    width: 4.5rem;
+}
+
+.tf-actividad td {
+    padding: 0.4rem 0.25rem;
+    vertical-align: middle;
+    border-bottom: 1px dashed var(--tc-borde);
+}
+
+.tf-actividad:last-child td {
+    border-bottom: 0;
+}
+
+/* Las del sábado se distinguen apenas: son parte del mismo hábito. */
+.tf-actividad--dia td {
+    background: var(--tc-naranja-tenue);
+}
+
+.tf-actividad__nombre {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    color: var(--tc-azul-profundo);
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tf-actividad__nombre i {
+    color: var(--tc-turquesa-oscuro);
+    font-size: 1rem;
+}
+
+.tf-actividad__dia {
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: var(--tc-naranja);
+    color: var(--tc-blanco);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tf-actividad__minutos {
+    max-width: 7.5rem;
+}
+
+.tf-actividad__sin-minutos {
+    color: var(--tc-gris-300);
+}
+
+.tf-actividad .tf-actividad__check {
+    width: 1.15rem;
+    height: 1.15rem;
 }
 
 /* ==========================================================================

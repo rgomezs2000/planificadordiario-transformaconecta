@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\ImportarPlanificacion;
 use App\Excel\PlantillaDelPlanificador;
 use App\Helpers\Helper;
+use App\Models\DailyActivity;
 use App\Models\DailyPlan;
 use App\Models\EnergyLevel;
 use App\Models\PlanificacionHoja;
@@ -12,6 +13,7 @@ use App\Models\PlanificacionImportacion;
 use App\Models\PreparationItem;
 use App\Models\ReflectionAnswer;
 use App\Models\ScheduleEntry;
+use App\Models\WeeklyReflection;
 use App\Planificacion\ArchivosDePlanificacion;
 use App\Planificacion\ImportadorDePlanificacion;
 use App\Planificacion\LanzadorDeCorridas;
@@ -81,12 +83,17 @@ class PlanificacionPeriodicaTest extends TestCase
         foreach ([
             PlantillaDelPlanificador::ETIQUETA_FECHA,
             PlantillaDelPlanificador::ETIQUETA_ENERGIA,
+            PlantillaDelPlanificador::TITULO_META_SEMANAL,
             PlantillaDelPlanificador::TITULO_OBJETIVOS,
             PlantillaDelPlanificador::TITULO_HORARIO,
+            PlantillaDelPlanificador::TITULO_ACTIVIDADES,
+            PlantillaDelPlanificador::TITULO_META_PERSONAL,
             PlantillaDelPlanificador::TITULO_PREPARACION,
             PlantillaDelPlanificador::TITULO_PROCRASTINACION,
             PlantillaDelPlanificador::TITULO_ACCION,
             PlantillaDelPlanificador::TITULO_CIERRE,
+            PlantillaDelPlanificador::TITULO_NOTAS,
+            PlantillaDelPlanificador::TITULO_REFLEXION,
             PlantillaDelPlanificador::ETIQUETA_CIERRE_LOGROS,
         ] as $etiqueta) {
             $this->assertNotNull(
@@ -95,6 +102,31 @@ class PlanificacionPeriodicaTest extends TestCase
             );
         }
 
+        // Las actividades del catálogo, con WhatsApp entre audios y alimentación.
+        foreach (DailyActivity::active()->get() as $actividad) {
+            $this->assertNotNull(
+                PlantillaDelPlanificador::buscarFila($dia, PlantillaDelPlanificador::etiquetaDeActividad($actividad)),
+                'Falta la actividad «'.$actividad->name.'» en la planilla.'
+            );
+        }
+
+        $filaWhatsapp = PlantillaDelPlanificador::buscarFila(
+            $dia,
+            PlantillaDelPlanificador::etiquetaDeActividad(
+                DailyActivity::query()->where('clave', 'temas_whatsapp')->firstOrFail()
+            )
+        );
+        $filaAlimentacion = PlantillaDelPlanificador::buscarFila(
+            $dia,
+            PlantillaDelPlanificador::etiquetaDeActividad(
+                DailyActivity::query()->where('clave', 'alimentacion')->firstOrFail()
+            )
+        );
+
+        $this->assertNotNull($filaWhatsapp);
+        $this->assertNotNull($filaAlimentacion);
+        $this->assertLessThan($filaAlimentacion, $filaWhatsapp);
+
         // Los catálogos están escritos en la hoja, tal como están en la base.
         foreach (PreparationItem::active()->pluck('name') as $item) {
             $this->assertNotNull(PlantillaDelPlanificador::buscarFila($dia, $item), 'Falta el ítem «'.$item.'».');
@@ -102,13 +134,16 @@ class PlanificacionPeriodicaTest extends TestCase
 
         // La hoja va protegida y las celdas de valor quedan escribibles.
         $this->assertTrue($dia->getProtection()->isProtectionEnabled());
+
+        $filaObjetivo = PlantillaDelPlanificador::buscarFila($dia, PlantillaDelPlanificador::TITULO_OBJETIVOS) + 2;
+
         $this->assertSame(
             Protection::PROTECTION_UNPROTECTED,
-            $dia->getCell('C9')->getStyle()->getProtection()->getLocked()
+            $dia->getCell('C'.$filaObjetivo)->getStyle()->getProtection()->getLocked()
         );
         $this->assertNotSame(
             Protection::PROTECTION_UNPROTECTED,
-            $dia->getCell('B9')->getStyle()->getProtection()->getLocked()
+            $dia->getCell('B'.$filaObjetivo)->getStyle()->getProtection()->getLocked()
         );
     }
 
@@ -250,7 +285,8 @@ class PlanificacionPeriodicaTest extends TestCase
 
         // Y sigue trayendo las listas de siempre (energía y horas).
         $this->assertSame('"Baja,Media,Alta"', $dia->getDataValidation('C5')->getFormula1());
-        $this->assertTrue($dia->dataValidationExists('B15'));
+        $filaHorario = PlantillaDelPlanificador::buscarFila($dia, PlantillaDelPlanificador::TITULO_HORARIO) + 2;
+        $this->assertTrue($dia->dataValidationExists('B'.$filaHorario));
     }
 
     /** La hoja oculta de las fechas se ignora, como las instrucciones. */
@@ -505,7 +541,11 @@ class PlanificacionPeriodicaTest extends TestCase
             ->assertOk()
             ->assertSee('Planificación periódica')
             ->assertSee('Monta el libro del período')
-            ->assertSee(ArchivosDePlanificacion::PLANTILLA);
+            ->assertSee(ArchivosDePlanificacion::PLANTILLA)
+            // El campo del Paso 2 es múltiple y sólo acepta libros .xlsx.
+            ->assertSee('name="archivos[]"', false)
+            ->assertSee('accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"', false)
+            ->assertSee('multiple required', false);
 
         $this->get(route('planificacion.plantilla', absolute: false))
             ->assertOk()
@@ -549,7 +589,7 @@ class PlanificacionPeriodicaTest extends TestCase
             true
         );
 
-        $this->post(route('planificacion.store', absolute: false), ['archivo' => $libro])
+        $this->post(route('planificacion.store', absolute: false), ['archivos' => [$libro]])
             ->assertRedirect(route('planificacion.index', absolute: false))
             ->assertSessionHas('exito');
 
@@ -578,11 +618,79 @@ class PlanificacionPeriodicaTest extends TestCase
                 true
             );
 
-            $this->post(route('planificacion.store', absolute: false), ['archivo' => $libro])->assertSessionHas('exito');
+            $this->post(route('planificacion.store', absolute: false), ['archivos' => [$libro]])->assertSessionHas('exito');
         }
 
         $this->assertCount(1, ArchivosDePlanificacion::librosEnCola());
         $this->assertSame(1, PlanificacionImportacion::count());
+    }
+
+    /** El campo es múltiple: varios libros entran a la cola en un solo envío. */
+    public function test_se_pueden_montar_varios_libros_a_la_vez(): void
+    {
+        $respuesta = $this->post(
+            route('planificacion.store', absolute: false),
+            ['archivos' => [
+                $this->archivoDePrueba('planilla octubre.xlsx'),
+                $this->archivoDePrueba('planilla noviembre.xlsx'),
+                $this->archivoDePrueba('planilla diciembre.xlsx'),
+            ]],
+            ['Accept' => 'application/json']
+        );
+
+        $respuesta->assertStatus(201)
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('data.archivos', [
+                'planilla-octubre.xlsx',
+                'planilla-noviembre.xlsx',
+                'planilla-diciembre.xlsx',
+            ])
+            ->assertJsonPath('data.fallos', []);
+
+        // Los tres quedaron en la cola, cada uno con su registro en espera.
+        foreach ([
+            'planilla-octubre.xlsx',
+            'planilla-noviembre.xlsx',
+            'planilla-diciembre.xlsx',
+        ] as $nombre) {
+            $this->assertTrue(ArchivosDePlanificacion::estaEnCola($nombre));
+            $this->assertSame(
+                PlanificacionImportacion::EN_ESPERA,
+                PlanificacionImportacion::where('archivo', $nombre)->first()->estado
+            );
+        }
+
+        $this->assertCount(3, ArchivosDePlanificacion::librosEnCola());
+        $this->assertStringContainsString('3 libros quedaron en la cola', (string) $respuesta->json('message'));
+
+        // Montar sigue sin procesar: la base de los diarios no se toca.
+        $this->assertSame(0, DailyPlan::count());
+    }
+
+    /**
+     * La validación es para toda la lista: si uno de los elegidos no es .xlsx,
+     * no entra ninguno (no se monta a medias).
+     */
+    public function test_si_un_libro_no_es_xlsx_no_se_monta_ninguno(): void
+    {
+        PlantillaDelPlanificador::conservar();
+
+        $respuesta = $this->post(
+            route('planificacion.store', absolute: false),
+            ['archivos' => [
+                $this->archivoDePrueba('planilla octubre.xlsx'),
+                UploadedFile::fake()->create('notas.txt', 4, 'text/plain'),
+            ]],
+            ['Accept' => 'application/json']
+        );
+
+        $respuesta->assertStatus(422)
+            ->assertJsonPath('ok', false)
+            ->assertJsonPath('message', 'Todos los libros tienen que ser .xlsx (Excel).');
+
+        // Ni la cola ni los registros: no quedó nada a medias.
+        $this->assertSame([], ArchivosDePlanificacion::librosEnCola());
+        $this->assertSame(0, PlanificacionImportacion::count());
     }
 
     public function test_un_libro_se_puede_sacar_de_la_cola(): void
@@ -597,7 +705,7 @@ class PlanificacionPeriodicaTest extends TestCase
             true
         );
 
-        $this->post(route('planificacion.store', absolute: false), ['archivo' => $libro]);
+        $this->post(route('planificacion.store', absolute: false), ['archivos' => [$libro]]);
 
         $this->delete(route('planificacion.descartar', ['archivo' => 'planilla-octubre.xlsx'], absolute: false))
             ->assertRedirect(route('planificacion.index', absolute: false))
@@ -721,13 +829,13 @@ class PlanificacionPeriodicaTest extends TestCase
 
         $respuesta = $this->post(
             route('planificacion.store', absolute: false),
-            ['archivo' => $this->archivoDePrueba('planilla octubre.xlsx')],
+            ['archivos' => [$this->archivoDePrueba('planilla octubre.xlsx')]],
             ['Accept' => 'application/json']
         );
 
         $respuesta->assertStatus(201)
             ->assertJsonPath('ok', true)
-            ->assertJsonPath('data.archivo', 'planilla-octubre.xlsx');
+            ->assertJsonPath('data.archivos', ['planilla-octubre.xlsx']);
 
         // No es una redirección: el navegador no recarga nada. (Ojo: el 201
         // cuenta como "redirect" para Symfony, así que se mira la cabecera.)
@@ -743,13 +851,13 @@ class PlanificacionPeriodicaTest extends TestCase
     {
         $respuesta = $this->post(
             route('planificacion.store', absolute: false),
-            ['archivo' => UploadedFile::fake()->create('planilla.txt', 4, 'text/plain')],
+            ['archivos' => [UploadedFile::fake()->create('planilla.txt', 4, 'text/plain')]],
             ['Accept' => 'application/json']
         );
 
         $respuesta->assertStatus(422)
             ->assertJsonPath('ok', false)
-            ->assertJsonPath('message', 'El libro tiene que ser .xlsx (Excel).');
+            ->assertJsonPath('message', 'Todos los libros tienen que ser .xlsx (Excel).');
 
         // Un archivo que no sirve no se guarda ni deja nada en la cola.
         $this->assertSame([], ArchivosDePlanificacion::librosEnCola());
@@ -819,7 +927,7 @@ class PlanificacionPeriodicaTest extends TestCase
 
         // Se monta un libro y se corre.
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('semana 1.xlsx')],
         ])->assertSessionHas('exito');
 
         $this->artisan('planificacion:importar')->assertSuccessful();
@@ -1007,7 +1115,7 @@ class PlanificacionPeriodicaTest extends TestCase
     {
         // 1) Un libro montado y una corrida encima: queda parcial, con su detalle.
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('semana 1.xlsx')],
         ])->assertSessionHas('exito');
 
         $this->artisan('planificacion:importar')->assertSuccessful();
@@ -1023,7 +1131,7 @@ class PlanificacionPeriodicaTest extends TestCase
         // 2) Se vuelve a montar con el mismo nombre: se reemplaza.
         $respuesta = $this->post(
             route('planificacion.store', absolute: false),
-            ['archivo' => $this->archivoDePrueba('semana 1.xlsx')],
+            ['archivos' => [$this->archivoDePrueba('semana 1.xlsx')]],
             ['Accept' => 'application/json']
         );
 
@@ -1092,7 +1200,7 @@ class PlanificacionPeriodicaTest extends TestCase
     public function test_la_cola_dibuja_los_libros_ya_corridos(): void
     {
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('libro de ejemplo.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('libro de ejemplo.xlsx')],
         ])->assertSessionHas('exito');
 
         // Una corrida de verdad: el registro queda con su fecha de proceso.
@@ -1230,7 +1338,7 @@ class PlanificacionPeriodicaTest extends TestCase
     public function test_la_corrida_deja_el_progreso_y_su_log(): void
     {
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('semana 1.xlsx')],
         ])->assertSessionHas('exito');
 
         $this->artisan(ImportarPlanificacion::COMANDO)->assertSuccessful();
@@ -1271,7 +1379,7 @@ class PlanificacionPeriodicaTest extends TestCase
     public function test_el_libro_queda_en_curso_mientras_se_procesa(): void
     {
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('semana 1.xlsx')],
         ])->assertSessionHas('exito');
 
         $enCurso = null;
@@ -1300,11 +1408,89 @@ class PlanificacionPeriodicaTest extends TestCase
         $this->assertSame(1, $cerrado->hojas_saltadas);
     }
 
+    /**
+     * Las secciones nuevas del formato también viajan por la corrida masiva:
+     * meta semanal, actividades (con WhatsApp y minutos), seguimiento personal
+     * y reflexión del domingo.
+     */
+    public function test_la_corrida_lee_las_secciones_nuevas_del_formato(): void
+    {
+        $libro = PlantillaDelPlanificador::generarPeriodo('2026-10-24', '2026-10-25');
+
+        $sabado = $libro->getSheetByName('2026-10-24');
+        $domingo = $libro->getSheetByName('2026-10-25');
+
+        $this->prepararHojaDelDia($sabado, '2026-10-24');
+        $this->prepararHojaDelDia($domingo, '2026-10-25');
+
+        // La meta se escribe sólo en el sábado; el domingo la hereda.
+        PlantillaDelPlanificador::escribir($sabado, PlantillaDelPlanificador::ETIQUETA_META_GOAL, 'Ordenar mis mañanas');
+        PlantillaDelPlanificador::escribir($sabado, PlantillaDelPlanificador::ETIQUETA_META_WHY, 'Porque me da calma');
+        PlantillaDelPlanificador::escribir($sabado, PlantillaDelPlanificador::ETIQUETA_PERSONAL_HICE, 'Escribí la primera acción');
+        PlantillaDelPlanificador::escribir($sabado, PlantillaDelPlanificador::ETIQUETA_PERSONAL_AYUDO, 'La lista corta');
+        PlantillaDelPlanificador::escribir($sabado, PlantillaDelPlanificador::ETIQUETA_PERSONAL_DIFICULTO, 'El teléfono');
+
+        $this->prepararActividad($sabado, 'caminata', 'Sí', '35');
+        $this->prepararActividad($sabado, 'temas_whatsapp', 'Sí');
+        $this->prepararActividad($sabado, 'cambio_sabanas', 'Sí');
+
+        // La reflexión del sábado se ignora; la del domingo es la que vale.
+        $this->prepararReflexion($sabado, 'NO DEBE GUARDARSE');
+        $this->prepararActividad($domingo, 'meditacion', 'Sí', '20');
+        $this->prepararReflexion($domingo, 'Respuesta del domingo');
+
+        $ruta = tempnam(sys_get_temp_dir(), 'planilla').'.xlsx';
+        file_put_contents($ruta, PlantillaDelPlanificador::contenido($libro));
+
+        try {
+            $this->artisan(ImportarPlanificacion::COMANDO, ['--archivo' => $ruta])->assertExitCode(0);
+        } finally {
+            @unlink($ruta);
+        }
+
+        $planSabado = DailyPlan::query()->whereDate('plan_date', '2026-10-24')->firstOrFail();
+        $planDomingo = DailyPlan::query()->whereDate('plan_date', '2026-10-25')->firstOrFail();
+
+        // Meta semanal compartida.
+        $this->assertSame('Ordenar mis mañanas', $planSabado->weeklyGoal->goal);
+        $this->assertSame('Porque me da calma', $planSabado->weeklyGoal->why_important);
+        $this->assertSame($planSabado->weekly_goal_id, $planDomingo->weekly_goal_id);
+
+        // Actividades, con WhatsApp y minutos.
+        $caminata = DailyActivity::query()->where('clave', 'caminata')->firstOrFail();
+        $whatsapp = DailyActivity::query()->where('clave', 'temas_whatsapp')->firstOrFail();
+        $sabanas = DailyActivity::query()->where('clave', 'cambio_sabanas')->firstOrFail();
+        $meditacion = DailyActivity::query()->where('clave', 'meditacion')->firstOrFail();
+
+        $pivoteCaminata = $planSabado->activities()->where('daily_activities.id', $caminata->id)->firstOrFail();
+        $pivoteWhatsapp = $planSabado->activities()->where('daily_activities.id', $whatsapp->id)->firstOrFail();
+        $pivoteSabanas = $planSabado->activities()->where('daily_activities.id', $sabanas->id)->firstOrFail();
+        $pivoteMeditacion = $planDomingo->activities()->where('daily_activities.id', $meditacion->id)->firstOrFail();
+
+        $this->assertTrue((bool) $pivoteCaminata->pivot->is_done);
+        $this->assertSame(35, (int) $pivoteCaminata->pivot->minutes);
+        $this->assertTrue((bool) $pivoteWhatsapp->pivot->is_done);
+        $this->assertTrue((bool) $pivoteSabanas->pivot->is_done);
+        $this->assertSame(20, (int) $pivoteMeditacion->pivot->minutes);
+
+        // Seguimiento personal y reflexión del domingo.
+        $this->assertSame('Escribí la primera acción', $planSabado->personal_done_today);
+        $this->assertSame('La lista corta', $planSabado->personal_helped);
+        $this->assertSame('El teléfono', $planSabado->personal_hard);
+
+        $reflexion = WeeklyReflection::forDate('2026-10-25');
+        $this->assertNotNull($reflexion);
+        $this->assertSame('Respuesta del domingo', $reflexion->how_was_week);
+
+        $hojaSabado = PlanificacionHoja::query()->where('hoja', '2026-10-24')->firstOrFail();
+        $this->assertStringContainsString('solo se guarda el domingo', (string) $hojaSabado->detalle);
+    }
+
     /** La corrida del cron también deja su rastro. */
     public function test_la_corrida_del_cron_tambien_deja_su_log(): void
     {
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDeEjemplo('semana 1.xlsx'),
+            'archivos' => [$this->archivoDeEjemplo('semana 1.xlsx')],
         ]);
 
         $this->artisan(ImportarPlanificacion::COMANDO)->assertSuccessful();
@@ -1403,7 +1589,7 @@ class PlanificacionPeriodicaTest extends TestCase
         PlantillaDelPlanificador::conservar();
 
         $this->post(route('planificacion.store', absolute: false), [
-            'archivo' => $this->archivoDePrueba($nombre),
+            'archivos' => [$this->archivoDePrueba($nombre)],
         ])->assertSessionHas('exito');
 
         return Helper::safeFileName($nombre);
@@ -1447,6 +1633,70 @@ class PlanificacionPeriodicaTest extends TestCase
                 ['slot' => 1, 'description' => 'Un objetivo ya cargado'],
             ],
         ]);
+    }
+
+    /** Deja una hoja con lo mínimo obligatorio para que la corrida la cree. */
+    private function prepararHojaDelDia(Worksheet $hoja, string $fecha): void
+    {
+        PlantillaDelPlanificador::escribir($hoja, PlantillaDelPlanificador::ETIQUETA_ENERGIA, 'Media');
+
+        $filaObjetivos = PlantillaDelPlanificador::buscarFila($hoja, PlantillaDelPlanificador::TITULO_OBJETIVOS) + 2;
+
+        for ($ranura = 1; $ranura <= 3; $ranura++) {
+            PlantillaDelPlanificador::escribirEnFila(
+                $hoja, $filaObjetivos + $ranura - 1,
+                PlantillaDelPlanificador::COLUMNA_VALOR, 'Objetivo '.$ranura
+            );
+            PlantillaDelPlanificador::escribirEnFila(
+                $hoja, $filaObjetivos + $ranura - 1,
+                PlantillaDelPlanificador::COLUMNA_DETALLE, $ranura === 1 ? 'Sí' : 'No'
+            );
+        }
+
+        $filaHorario = PlantillaDelPlanificador::buscarFila($hoja, PlantillaDelPlanificador::TITULO_HORARIO) + 2;
+
+        PlantillaDelPlanificador::escribirEnFila($hoja, $filaHorario, PlantillaDelPlanificador::COLUMNA_ETIQUETA, '08:00');
+        PlantillaDelPlanificador::escribirEnFila($hoja, $filaHorario, PlantillaDelPlanificador::COLUMNA_VALOR, 'Actividad '.$fecha);
+        PlantillaDelPlanificador::escribirEnFila($hoja, $filaHorario, PlantillaDelPlanificador::COLUMNA_DETALLE, 'Sí');
+
+        foreach ([
+            PlantillaDelPlanificador::ETIQUETA_CIERRE_LOGROS,
+            PlantillaDelPlanificador::ETIQUETA_CIERRE_PENDIENTE,
+            PlantillaDelPlanificador::ETIQUETA_CIERRE_CUANDO,
+            PlantillaDelPlanificador::ETIQUETA_CIERRE_ORGULLO,
+        ] as $etiqueta) {
+            PlantillaDelPlanificador::escribir($hoja, $etiqueta, 'Cierre '.$fecha);
+        }
+    }
+
+    /** Marca una actividad del catálogo en su fila de la hoja. */
+    private function prepararActividad(
+        Worksheet $hoja,
+        string $clave,
+        string $hecho,
+        ?string $minutos = null
+    ): void {
+        $actividad = DailyActivity::query()->where('clave', $clave)->firstOrFail();
+        $fila = PlantillaDelPlanificador::buscarFila(
+            $hoja,
+            PlantillaDelPlanificador::etiquetaDeActividad($actividad)
+        );
+
+        $this->assertNotNull($fila, 'No se encontró la actividad «'.$clave.'» en la hoja.');
+
+        PlantillaDelPlanificador::escribirEnFila($hoja, $fila, PlantillaDelPlanificador::COLUMNA_VALOR, $hecho);
+
+        if ($minutos !== null) {
+            PlantillaDelPlanificador::escribirEnFila($hoja, $fila, PlantillaDelPlanificador::COLUMNA_DETALLE, $minutos);
+        }
+    }
+
+    /** Escribe la misma respuesta en las seis preguntas de la reflexión semanal. */
+    private function prepararReflexion(Worksheet $hoja, string $texto): void
+    {
+        foreach (WeeklyReflection::PREGUNTAS as $pregunta) {
+            PlantillaDelPlanificador::escribir($hoja, $pregunta, $texto);
+        }
     }
 
     /** El libro de ejemplo, guardado en el disco aislado de la prueba. */

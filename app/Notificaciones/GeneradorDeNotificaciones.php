@@ -13,7 +13,7 @@ use Carbon\CarbonImmutable;
  * Las reglas del recordatorio diario.
  *
  * Trabaja siempre sobre el diario del día que está transcurriendo y devuelve
- * las notificaciones que corresponden según tres reglas:
+ * las notificaciones que corresponden según cuatro reglas:
  *
  *   1. Si el día tiene diario y alguno de los tres objetivos principales
  *      (Debo hacer, Quiero hacer, Algo para mí) no está marcado, se recuerda
@@ -21,7 +21,10 @@ use Carbon\CarbonImmutable;
  *   2. Si el diario se cargó de antemano y una franja del horario ya pasó su
  *      hora (más el margen de gracia) sin marcarse, se recuerda realizar esa
  *      tarea. Las franjas marcadas no se notifican.
- *   3. Si el día no tiene diario cargado, se avisa que falta crearlo (esto se
+ *   3. Si una actividad diaria (meditación, estudio, caminata…) ya pasó su
+ *      hora y sigue sin marcarse, se pregunta si se realizó. Las que ya están
+ *      marcadas no se notifican.
+ *   4. Si el día no tiene diario cargado, se avisa que falta crearlo (esto se
  *      puede apagar en config/notificaciones.php).
  *
  * El generador no guarda nada: sólo calcula. Guardar y replicar es tarea de
@@ -52,7 +55,7 @@ class GeneradorDeNotificaciones
 
         $plan = DailyPlan::query()
             ->whereDate('plan_date', $hoy->toDateString())
-            ->with(['goals.goalType', 'scheduleEntries'])
+            ->with(['goals.goalType', 'scheduleEntries', 'activities'])
             ->first();
 
         if (! $plan) {
@@ -64,6 +67,7 @@ class GeneradorDeNotificaciones
         return array_merge(
             $this->objetivosPendientes($plan, $nombres, $ahora, $hoy),
             $this->franjasPendientes($plan, $ahora, $hoy),
+            $this->actividadesPendientes($plan, $ahora, $hoy),
         );
     }
 
@@ -195,7 +199,75 @@ class GeneradorDeNotificaciones
     }
 
     /* ======================================================================
-     |  Regla 3 · día sin diario
+     |  Regla 3 · actividades diarias
+     ====================================================================== */
+
+    /**
+     * Una pregunta por cada actividad diaria que ya pasó su hora y sigue sin
+     * marcarse. Las que ya están marcadas no se notifican, y las que no
+     * aplican a ese día (el cambio de sábanas fuera del sábado) tampoco.
+     *
+     * @return array<int, Candidata>
+     */
+    private function actividadesPendientes(
+        DailyPlan $plan,
+        CarbonImmutable $ahora,
+        CarbonImmutable $hoy
+    ): array {
+        if (! config('notificaciones.avisar_actividades', true)) {
+            return [];
+        }
+
+        $margen = max(0, (int) config('notificaciones.margen_actividades_minutos', 0));
+        $horaReserva = (string) config('notificaciones.hora_actividades', '18:00');
+        $avisos = [];
+
+        foreach ($plan->activities as $actividad) {
+            if ((bool) $actividad->pivot->is_done) {
+                continue;
+            }
+
+            if (! $actividad->aplicaA($hoy)) {
+                continue;
+            }
+
+            $hora = $this->horaDelDia((string) ($actividad->reminder_time ?: $horaReserva), $hoy);
+
+            if (! $hora) {
+                continue;
+            }
+
+            // Igual que las franjas: sólo se avisa cuando la hora ya pasó.
+            if ($hora->addMinutes($margen)->greaterThan($ahora)) {
+                continue;
+            }
+
+            $avisos[] = new Candidata(
+                clave: 'actividad:'.$plan->id.':'.$actividad->id.':'.$hoy->toDateString(),
+                tipo: Candidata::TIPO_ACTIVIDAD,
+                titulo: $actividad->preguntaRecordatorio(),
+                mensaje: 'Todavía no está marcada en tu diario de hoy. Si ya la hiciste, márcala '
+                    .'para que cuente en tu seguimiento.',
+                fechaHora: $ahora,
+                prioridad: 'media',
+                fechaReferencia: $hoy,
+                dailyPlanId: $plan->id,
+                dailyActivityId: $actividad->id,
+                meta: [
+                    'actividad' => $actividad->name,
+                    'clave' => $actividad->clave,
+                    'categoria' => $actividad->category,
+                    'hora' => Helper::timeLabel($actividad->reminder_time) ?? $hora->format('H:i'),
+                    'fecha' => $hoy->toDateString(),
+                ],
+            );
+        }
+
+        return $avisos;
+    }
+
+    /* ======================================================================
+     |  Regla 4 · día sin diario
      ====================================================================== */
 
     /** @return array<int, Candidata> */

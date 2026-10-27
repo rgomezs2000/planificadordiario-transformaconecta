@@ -32,6 +32,7 @@
     <form id="formulario-diario" method="POST" action="{{ $accion }}"
           data-modo="{{ $modo }}" data-metodo="{{ $metodo }}"
           data-indice-horario="{{ $indiceHorario }}"
+          data-url-meta-semanal="{{ route('diario.meta-semanal') }}"
           data-url-exito="{{ $esEdicion ? route('diario.listado') : route('home') }}" novalidate>
         @csrf
         @if ($metodo !== 'POST')
@@ -93,7 +94,79 @@
                  ============================================================== --}}
             <div class="col-12 col-lg-7">
 
-                {{-- 2. MIS 3 OBJETIVOS PRINCIPALES DE HOY --}}
+                {{-- 2. MI META SEMANAL (va encima de los 3 objetivos) --}}
+                @php $metaRegistrada = (bool) $metaSemanal; @endphp
+
+                <section class="tc-tarjeta tf-seccion tf-seccion--naranja mb-3" data-tf-seccion="meta-semanal">
+                    <h3 class="tf-titulo">
+                        <i class="bi bi-flag" aria-hidden="true"></i>
+                        Mi meta semanal
+                        @unless ($soloLectura)
+                            <span class="tf-obligatorio-tag {{ $metaRegistrada ? 'tf-obligatorio-tag--suave' : '' }}"
+                                  id="meta-semanal-tag">
+                                {{ $metaRegistrada ? 'Registrada' : 'Obligatorio' }}
+                            </span>
+                        @endunless
+                    </h3>
+
+                    <div class="tf-meta__cabecera">
+                        <span class="tf-meta__semana" id="meta-semanal-etiqueta">
+                            {{ $metaSemanal?->etiqueta() ?? 'Aún no hay meta para esta semana' }}
+                        </span>
+                    </div>
+
+                    @if ($soloLectura && ! $metaSemanal)
+                        <p class="tf-ayuda mb-0">Este día no tiene una meta semanal registrada.</p>
+                    @else
+                        {{-- El botón de cambiar pone este campo en 1. Sin él, la
+                             meta registrada no se vuelve a tocar al guardar. --}}
+                        @unless ($soloLectura)
+                            <input type="hidden" name="weekly_goal[actualizar]" id="weekly_goal_actualizar" value="0">
+                        @endunless
+
+                        <p class="tf-ayuda" id="meta-semanal-nota">
+                            @if ($metaRegistrada)
+                                Ya está registrada para esta semana: se usa en todos sus días.
+                                Si necesitas cambiarla, pulsa «Cambiar meta de la semana».
+                            @else
+                                Aún no hay meta para esta semana: escríbela y se compartirá con todos sus días.
+                            @endif
+                        </p>
+
+                        <label class="tf-etiqueta {{ $metaRegistrada || $soloLectura ? '' : 'tf-obligatorio' }}"
+                               id="weekly_goal_goal_label"
+                               for="weekly_goal_goal">
+                            Escribe una meta semanal de lo que más te cueste
+                        </label>
+                        <p class="tf-ayuda">
+                            Debe ser específica, realista y posible de lograr.
+                        </p>
+                        <textarea class="form-control tf-meta__campo" id="weekly_goal_goal"
+                                  name="weekly_goal[goal]" rows="3" maxlength="2000"
+                                  data-tf-requerido="meta-semanal"
+                                  @if ($metaRegistrada) readonly @endif {!! $ro !!}
+                                  placeholder="Esta semana me propongo…">{{ old('weekly_goal.goal', $metaSemanal?->goal) }}</textarea>
+
+                        <label class="tf-etiqueta mt-2" for="weekly_goal_why">
+                            ¿Por qué es importante para mí?
+                        </label>
+                        <textarea class="form-control tf-meta__campo" id="weekly_goal_why"
+                                  name="weekly_goal[why_important]" rows="2" maxlength="2000"
+                                  @if ($metaRegistrada) readonly @endif {!! $ro !!}
+                                  placeholder="Porque…">{{ old('weekly_goal.why_important', $metaSemanal?->why_important) }}</textarea>
+
+                        @unless ($soloLectura)
+                            <button type="button" class="tc-boton tc-boton--contorno tf-meta__editar"
+                                    id="meta-semanal-editar"
+                                    @if (! $metaRegistrada) hidden @endif>
+                                <i class="bi bi-pencil" aria-hidden="true"></i>
+                                Cambiar meta de la semana
+                            </button>
+                        @endunless
+                    @endif
+                </section>
+
+                {{-- 3. MIS 3 OBJETIVOS PRINCIPALES DE HOY --}}
                 <section class="tc-tarjeta tf-seccion tf-seccion--naranja mb-3" data-tf-seccion="objetivos">
                     <h3 class="tf-titulo">
                         <i class="bi bi-bullseye" aria-hidden="true"></i>
@@ -236,16 +309,171 @@
                     @endunless
                 </section>
 
-                {{-- 8. NOTAS / RECORDATORIOS --}}
+                {{-- 4. ACTIVIDADES DIARIAS (los hábitos de la hoja impresa) --}}
+                <section class="tc-tarjeta tf-seccion tf-seccion--turquesa mb-3" data-tf-seccion="actividades">
+                    <h3 class="tf-titulo">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        Actividades diarias
+                        @unless ($soloLectura)
+                            <span class="tf-obligatorio-tag tf-obligatorio-tag--suave">Marca lo que hiciste</span>
+                        @endunless
+                    </h3>
+                    <p class="tf-ayuda">
+                        Pequeñas acciones que sostienen el día. Las de los minutos piden cuánto tiempo les dedicaste.
+                        El sábado se suman las del cambio de semana.
+                    </p>
+
+                    <table class="table tf-actividades mb-0">
+                        <thead>
+                            <tr>
+                                <th scope="col">Actividad</th>
+                                <th scope="col" class="tf-actividades__col-minutos">Minutos</th>
+                                <th scope="col" class="tf-actividades__col-hecho text-center">Hecho</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($dailyActivities as $i => $actividad)
+                                @php
+                                    $fila = $plan?->activities->firstWhere('id', $actividad->id);
+                                    $visible = $actividad->weekday === null || (int) $actividad->weekday === $diaSemana;
+                                    $minutosDeshabilitados = ! $visible
+                                        || (! $soloLectura && ! $fila?->pivot->is_done);
+                                @endphp
+
+                                <tr class="tf-actividad{{ $actividad->weekday !== null ? ' tf-actividad--dia' : '' }}"
+                                    data-solo-dia="{{ $actividad->weekday ?? '' }}"
+                                    @if (! $visible) hidden @endif>
+                                    <td>
+                                        <input type="hidden" name="activities[{{ $i }}][daily_activity_id]"
+                                               value="{{ $actividad->id }}"
+                                               @if (! $visible) disabled @endif>
+
+                                        <label class="tf-actividad__nombre" for="actividad-{{ $actividad->id }}">
+                                            <i class="bi {{ $actividad->icon }}" aria-hidden="true"></i>
+                                            {{ $actividad->name }}
+                                            @if ($actividad->weekday !== null)
+                                                <span class="tf-actividad__dia">Solo sábado</span>
+                                            @endif
+                                        </label>
+                                    </td>
+                                    <td>
+                                        @if ($actividad->requires_minutes)
+                                            <div class="input-group input-group-sm tf-actividad__minutos">
+                                                <input type="number" class="form-control" min="0" max="1440" step="1"
+                                                       id="minutos-{{ $actividad->id }}"
+                                                       name="activities[{{ $i }}][minutes]"
+                                                       value="{{ old('activities.'.$i.'.minutes', $fila?->pivot->minutes) }}"
+                                                       aria-label="{{ $actividad->minutes_label ?? 'Minutos' }}"
+                                                       @disabled($minutosDeshabilitados)>
+                                                <span class="input-group-text">min</span>
+                                            </div>
+                                        @else
+                                            <span class="tf-actividad__sin-minutos" aria-hidden="true">—</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        <input class="form-check-input tf-actividad__check" type="checkbox"
+                                               name="activities[{{ $i }}][is_done]" value="1"
+                                               id="actividad-{{ $actividad->id }}"
+                                               data-tf-habilita="minutos-{{ $actividad->id }}"
+                                               @checked($fila?->pivot->is_done)
+                                               @if (! $visible) disabled @endif>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+
+                    @if ($soloLectura && $plan)
+                        <div class="tf-horario__pie">
+                            <p class="tf-ayuda mb-0">
+                                Marca las actividades que hiciste (y sus minutos) y guarda el cambio.
+                            </p>
+                            <button type="button" class="tc-boton tc-boton--turquesa" id="actividades-guardar"
+                                    data-url="{{ route('diario.actividades', $plan) }}">
+                                <i class="bi bi-check2-square" aria-hidden="true"></i> Guardar actividades
+                            </button>
+                        </div>
+                    @endif
+                </section>
+
+                {{-- 5. MI META PERSONAL (seguimiento del día a día) --}}
+                <section class="tc-tarjeta tf-seccion tf-seccion--naranja mb-3" data-tf-seccion="meta-personal"
+                         id="seccion-meta-personal" @if ($soloLectura && ! $metaSemanal) hidden @endif>
+                    <h3 class="tf-titulo">
+                        <i class="bi bi-person-heart" aria-hidden="true"></i>
+                        Mi meta personal
+                        <span class="tf-meta__dia" id="meta-personal-dia" title="Día de la semana">
+                            {{ $diaLetra }}
+                        </span>
+                        <span class="tf-meta__dia-nombre" id="meta-personal-dia-nombre">{{ $diaNombre }}</span>
+                    </h3>
+
+                    <p class="tf-ayuda" id="meta-personal-meta">
+                        @if ($metaSemanal)
+                            Tu meta de la semana: <strong>{{ \Illuminate\Support\Str::limit($metaSemanal->goal, 140) }}</strong>
+                        @else
+                            La meta de la semana se muestra aquí en cuanto la escribas.
+                        @endif
+                    </p>
+
+                    <label class="tf-etiqueta" for="personal_done_today">
+                        ¿Qué hice hoy para acercarme a mi meta?
+                    </label>
+                    <textarea class="form-control form-control-sm mb-2" id="personal_done_today"
+                              name="personal_done_today" rows="2" maxlength="2000"
+                              {!! $ro !!}>{{ old('personal_done_today', $plan?->personal_done_today) }}</textarea>
+
+                    <label class="tf-etiqueta" for="personal_helped">¿Qué me ayudó?</label>
+                    <textarea class="form-control form-control-sm mb-2" id="personal_helped"
+                              name="personal_helped" rows="2" maxlength="2000"
+                              {!! $ro !!}>{{ old('personal_helped', $plan?->personal_helped) }}</textarea>
+
+                    <label class="tf-etiqueta" for="personal_hard">¿Qué me dificultó?</label>
+                    <textarea class="form-control form-control-sm" id="personal_hard"
+                              name="personal_hard" rows="2" maxlength="2000"
+                              {!! $ro !!}>{{ old('personal_hard', $plan?->personal_hard) }}</textarea>
+                </section>
+
+                {{-- 8. NOTAS DEL DÍA --}}
                 <section class="tc-tarjeta tf-seccion mb-3">
                     <h3 class="tf-titulo">
                         <i class="bi bi-journal-check" aria-hidden="true"></i>
-                        Notas / recordatorios
+                        Notas del día
                     </h3>
+                    <p class="tf-ayuda">Tus notas y recordatorios, en un solo campo de texto.</p>
 
                     <textarea class="form-control tf-nota" id="notes" name="notes[0][content]"
                               rows="6" maxlength="1000" {!! $ro !!}
                               placeholder="Escribe aquí tus notas y recordatorios">{{ $plan?->notes->pluck('content')->implode("\n") }}</textarea>
+                </section>
+
+                {{-- 9. REFLEXIÓN DE LA SEMANA (sólo domingo) --}}
+                <section class="tc-tarjeta tf-seccion tf-seccion--rojo mb-3" data-tf-seccion="reflexion-semanal"
+                         id="seccion-reflexion-semanal" data-solo-dia="0"
+                         @if (! $esDomingo) hidden @endif>
+                    <h3 class="tf-titulo">
+                        <i class="bi bi-journal-heart" aria-hidden="true"></i>
+                        Reflexión de la semana
+                        <span class="tf-obligatorio-tag tf-obligatorio-tag--suave">Domingo</span>
+                    </h3>
+                    <p class="tf-ayuda">
+                        Cierra la semana con calma: lo que pasó, lo que aprendiste y lo que viene.
+                    </p>
+
+                    <span class="tf-meta__semana" id="reflexion-semanal-etiqueta">
+                        {{ $reflexionSemanal?->etiqueta() ?? 'Esta semana' }}
+                    </span>
+
+                    @foreach (\App\Models\WeeklyReflection::PREGUNTAS as $clave => $pregunta)
+                        <label class="tf-etiqueta mt-2" for="reflexion-{{ $clave }}">
+                            {{ $loop->iteration }}. {{ $pregunta }}
+                        </label>
+                        <textarea class="form-control form-control-sm" id="reflexion-{{ $clave }}"
+                                  name="weekly_reflection[{{ $clave }}]" rows="2" maxlength="2000"
+                                  @disabled($soloLectura || ! $esDomingo)
+                                  placeholder="Tu respuesta">{{ old('weekly_reflection.'.$clave, $reflexionSemanal?->{$clave}) }}</textarea>
+                    @endforeach
                 </section>
 
             </div>
@@ -493,7 +721,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap-datepicker@1.10.1/dist/locales/bootstrap-datepicker.es.min.js"></script>
 
     {{-- Funciones de este formulario: fecha/día, filas, checks y guardado --}}
-    <script src="{{ asset('js/script.js') }}"></script>
+    <script src="{{ asset('js/script.js') }}?v={{ filemtime(public_path('js/script.js')) }}"></script>
 
     {{-- El gráfico del día: se dibuja solo y se rehace con cada cambio del horario --}}
     <script src="{{ asset('js/grafico.js') }}"></script>

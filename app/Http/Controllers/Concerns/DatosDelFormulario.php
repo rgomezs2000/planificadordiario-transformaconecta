@@ -6,12 +6,15 @@ use App\Graficos\AgendaDelDia;
 use App\Helpers\Helper;
 use App\Models\ActionBlockDuration;
 use App\Models\ActionBlockOutcome;
+use App\Models\DailyActivity;
 use App\Models\DailyPlan;
 use App\Models\EnergyLevel;
 use App\Models\GoalType;
 use App\Models\PreparationItem;
 use App\Models\ReflectionQuestion;
 use App\Models\ScheduleEntry;
+use App\Models\WeeklyGoal;
+use App\Models\WeeklyReflection;
 
 /**
  * Datos que necesita la vista del formulario del diario.
@@ -34,6 +37,7 @@ trait DatosDelFormulario
                 ->get(),
             'actionBlockDurations' => ActionBlockDuration::active()->get(),
             'actionBlockOutcomes' => ActionBlockOutcome::active()->get(),
+            'dailyActivities' => DailyActivity::active()->get(),
             'weekDays' => $this->weekDays(),
         ];
     }
@@ -67,6 +71,12 @@ trait DatosDelFormulario
         ?string $planDate = null,
         bool $dateLocked = false
     ): array {
+        // La fecha con la que se abre el formulario: la del día guardado o la
+        // que traiga la ruta. Hoy, si no hay ninguna, para precargar la meta de
+        // la semana en curso.
+        $fechaBase = $plan?->plan_date ?? Helper::toCarbon($planDate) ?? Helper::today();
+        $diaSemana = $fechaBase ? (int) $fechaBase->dayOfWeek : (int) now()->dayOfWeek;
+
         return array_merge($this->catalogs(), [
             'plan' => $plan,
             'modo' => $modo,
@@ -77,6 +87,14 @@ trait DatosDelFormulario
                 : route('diario.store'),
             'metodo' => $modo === 'editar' ? 'PUT' : 'POST',
             'indiceHorario' => $plan ? $plan->scheduleEntries->count() : 0,
+            // Meta de la semana y reflexión de esa misma semana, si ya existen.
+            'metaSemanal' => $plan?->weeklyGoal ?? WeeklyGoal::forDate($fechaBase),
+            'reflexionSemanal' => WeeklyReflection::forDate($fechaBase),
+            'diaSemana' => $diaSemana,
+            'esSabado' => $diaSemana === 6,
+            'esDomingo' => $diaSemana === 0,
+            'diaLetra' => Helper::dayLetter($fechaBase) ?? '',
+            'diaNombre' => Helper::dayName($fechaBase, capitalize: true) ?? '',
             // Los tramos del gráfico del día. Es la misma estructura que viaja
             // al guardar, así el gráfico y la base hablan del mismo objeto.
             'grafico' => AgendaDelDia::datos(

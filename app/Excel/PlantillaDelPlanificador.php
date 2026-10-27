@@ -5,10 +5,12 @@ namespace App\Excel;
 use App\Helpers\Helper;
 use App\Models\ActionBlockDuration;
 use App\Models\ActionBlockOutcome;
+use App\Models\DailyActivity;
 use App\Models\EnergyLevel;
 use App\Models\GoalType;
 use App\Models\PreparationItem;
 use App\Models\ReflectionQuestion;
+use App\Models\WeeklyReflection;
 use App\Planificacion\ArchivosDePlanificacion;
 use Illuminate\Database\Eloquent\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
@@ -109,7 +111,7 @@ class PlantillaDelPlanificador
     /* Encabezado de la hoja. */
     public const TITULO = 'MI PLANIFICADOR DIARIO · PLANIFICACIÓN PERIÓDICA';
 
-    public const SUBTITULO = 'Programa de Desarrollo Personal «Transforma-Conecta» · Una hoja por día';
+    public const SUBTITULO = 'Programa de Desarrollo Personal «Transforma-Conecta» · MI RUTINA ME FORTALECE · Pequeñas acciones, grandes cambios';
 
     /* Fecha y energía. */
     public const ETIQUETA_FECHA = 'FECHA';
@@ -117,6 +119,30 @@ class PlantillaDelPlanificador
     public const ETIQUETA_ENERGIA = 'MI ENERGÍA HOY ✱';
 
     /* Secciones, en el orden en que se escriben en la hoja. */
+    public const TITULO_META_SEMANAL = 'MI META SEMANAL · se comparte con toda la semana';
+
+    public const ETIQUETA_META_GOAL = 'Escribe una meta semanal de lo que más te cueste';
+
+    public const ETIQUETA_META_WHY = '¿Por qué es importante para mí?';
+
+    public const TITULO_ACTIVIDADES = 'ACTIVIDADES DIARIAS';
+
+    public const ETIQUETA_ACTIVIDAD_HECHO = '¿Hecho? (Sí/No)';
+
+    public const ETIQUETA_ACTIVIDAD_MINUTOS = 'Minutos';
+
+    public const SUFIJO_SOLO_SABADO = ' · solo sábado';
+
+    public const TITULO_META_PERSONAL = 'MI META PERSONAL · seguimiento del día';
+
+    public const ETIQUETA_PERSONAL_HICE = '¿Qué hice hoy para acercarme a mi meta?';
+
+    public const ETIQUETA_PERSONAL_AYUDO = '¿Qué me ayudó?';
+
+    public const ETIQUETA_PERSONAL_DIFICULTO = '¿Qué me dificultó?';
+
+    public const TITULO_REFLEXION = 'REFLEXIÓN DE LA SEMANA · solo domingo';
+
     public const TITULO_OBJETIVOS = 'MIS 3 OBJETIVOS PRINCIPALES DE HOY ✱';
 
     public const TITULO_HORARIO = 'MI HORARIO DE HOY ✱ · al menos una franja';
@@ -160,13 +186,17 @@ class PlantillaDelPlanificador
     public const SECCIONES = [
         self::ETIQUETA_FECHA,
         self::ETIQUETA_ENERGIA,
+        self::TITULO_META_SEMANAL,
         self::TITULO_OBJETIVOS,
         self::TITULO_HORARIO,
+        self::TITULO_ACTIVIDADES,
+        self::TITULO_META_PERSONAL,
         self::TITULO_PREPARACION,
         self::TITULO_PROCRASTINACION,
         self::TITULO_ACCION,
         self::TITULO_CIERRE,
         self::TITULO_NOTAS,
+        self::TITULO_REFLEXION,
     ];
 
     /** Cuántas franjas de horario trae la hoja en blanco (las del catálogo). */
@@ -436,7 +466,21 @@ class PlantillaDelPlanificador
         self::lista($hoja, self::COLUMNA_VALOR.($fila - 1), self::nombresDeEnergia());
         $fila = self::separador($hoja, $fila);
 
-        // 3. Mis 3 objetivos principales de hoy.
+        // 3. Mi meta semanal (se comparte con todos los días de la semana).
+        self::franja($hoja, $fila++, self::TITULO_META_SEMANAL, self::NARANJA, 11, true, 20);
+        $fila = self::filaDeValor(
+            $hoja, $fila, self::ETIQUETA_META_GOAL,
+            'Debe ser específica, realista y posible de lograr. Si la dejas vacía, se usa la de la semana si ya existe.',
+            $editables, 30
+        );
+        $fila = self::filaDeValor(
+            $hoja, $fila, self::ETIQUETA_META_WHY,
+            'Opcional: por qué esta meta es importante para ti.',
+            $editables, 30
+        );
+        $fila = self::separador($hoja, $fila);
+
+        // 4. Mis 3 objetivos principales de hoy.
         self::franja($hoja, $fila++, self::TITULO_OBJETIVOS, self::NARANJA, 11, true, 20);
         self::encabezados($hoja, $fila++, 'Objetivo', 'Descripción ✱', 'Cumplido (Sí/No)');
 
@@ -472,7 +516,39 @@ class PlantillaDelPlanificador
 
         $fila = self::separador($hoja, $fila);
 
-        // 5. Antes de empezar.
+        // 6. Actividades diarias (los hábitos de la hoja impresa).
+        self::franja($hoja, $fila++, self::TITULO_ACTIVIDADES, self::TURQUESA, 11, true, 20);
+        self::encabezados(
+            $hoja, $fila++, 'Actividad',
+            self::ETIQUETA_ACTIVIDAD_HECHO,
+            self::ETIQUETA_ACTIVIDAD_MINUTOS.' · solo si la actividad los pide'
+        );
+
+        foreach (self::actividadesDiarias() as $actividad) {
+            self::etiqueta($hoja, $fila, self::etiquetaDeActividad($actividad), false, self::TURQUESA_TENUE);
+            self::escribible($hoja, $editables, self::COLUMNA_VALOR.$fila);
+            self::lista($hoja, self::COLUMNA_VALOR.$fila, self::SINO);
+            self::escribible($hoja, $editables, self::COLUMNA_DETALLE.$fila);
+            $hoja->getRowDimension($fila)->setRowHeight(20);
+            $fila++;
+        }
+
+        $fila = self::separador($hoja, $fila);
+
+        // 7. Mi meta personal: el seguimiento del día.
+        self::franja($hoja, $fila++, self::TITULO_META_PERSONAL, self::NARANJA, 11, true, 20);
+
+        foreach ([
+            self::ETIQUETA_PERSONAL_HICE,
+            self::ETIQUETA_PERSONAL_AYUDO,
+            self::ETIQUETA_PERSONAL_DIFICULTO,
+        ] as $etiqueta) {
+            $fila = self::filaDeValor($hoja, $fila, $etiqueta, null, $editables, 30, null, null, false);
+        }
+
+        $fila = self::separador($hoja, $fila);
+
+        // 8. Antes de empezar.
         self::franja($hoja, $fila++, self::TITULO_PREPARACION, self::TURQUESA, 11, true, 20);
         self::encabezados($hoja, $fila++, 'Ítem', '¿Listo? (Sí/No)', '¿Qué incluye?');
 
@@ -536,7 +612,16 @@ class PlantillaDelPlanificador
         self::escribible($hoja, $editables, self::COLUMNA_VALOR.$fila);
         $hoja->getRowDimension($fila)->setRowHeight(60);
 
-        // 10. Protección: las etiquetas no se mueven, los valores sí se escriben.
+        // 10. Reflexión de la semana (solo se guarda el domingo).
+        $fila++;
+        $fila = self::separador($hoja, $fila);
+        self::franja($hoja, $fila++, self::TITULO_REFLEXION, self::ROJO, 11, true, 20);
+
+        foreach (WeeklyReflection::PREGUNTAS as $pregunta) {
+            $fila = self::filaDeValor($hoja, $fila, $pregunta, null, $editables, 30, null, null, false);
+        }
+
+        // 11. Protección: las etiquetas no se mueven, los valores sí se escriben.
         foreach ($editables as $rango) {
             $hoja->getStyle($rango)->getProtection()->setLocked(Protection::PROTECTION_UNPROTECTED);
         }
@@ -588,6 +673,12 @@ class PlantillaDelPlanificador
             '9. Son obligatorios: la energía (una de la lista), los 3 objetivos con su descripción, al menos una franja del horario con su hora y su actividad, y los 4 campos del cierre del día (lo que logré, lo pendiente, cuándo lo haré y por qué estoy orgulloso/a).',
             '10. En el horario, si escribes una hora escribe también su actividad, y si escribes una actividad ponle su hora. Una franja a medias salta la hoja.',
             '11. Las secciones opcionales (antes de empezar, si estoy procrastinando, bloque de acción y notas) pueden quedar vacías. Lo que no se reconozca ahí se ignora y queda anotado en el reporte.',
+            '',
+            'SECCIONES NUEVAS',
+            '· MI META SEMANAL: escríbela una vez en cualquiera de las hojas de la semana. Es la misma para todos los días de esa semana; si la dejas vacía, el sistema usa la que ya exista para esa semana.',
+            '· ACTIVIDADES DIARIAS: marca Sí/No en cada hábito. Caminata, respiración y meditación llevan sus minutos en la columna «Minutos». Las tres del sábado (sábanas, toallas y espacio ordenado) solo se tienen en cuenta ese día.',
+            '· MI META PERSONAL: el seguimiento del día (qué hice, qué me ayudó y qué me dificultó). Es opcional.',
+            '· REFLEXIÓN DE LA SEMANA: sus seis preguntas solo se guardan en la hoja del domingo. En los demás días se ignoran y queda anotado en el reporte.',
             '',
             'CÓMO SE ENTREGA',
             '12. No muevas, borres ni agregues filas: la hoja está protegida para evitarlo. Si necesitas tocar la estructura, quita la protección desde Revisar → Quitar protección de hoja, bajo tu responsabilidad.',
@@ -713,6 +804,23 @@ class PlantillaDelPlanificador
     public static function resultadosDeBloque(): array
     {
         return ActionBlockOutcome::active()->pluck('name')->all();
+    }
+
+    /** @return Collection<int, DailyActivity> */
+    public static function actividadesDiarias()
+    {
+        return DailyActivity::active()->get();
+    }
+
+    /**
+     * El nombre con el que la actividad se rotula en la hoja.
+     *
+     * Las del sábado llevan el sufijo para que se vea por qué solo aplican ese
+     * día; el lector lo quita antes de buscar la actividad en el catálogo.
+     */
+    public static function etiquetaDeActividad(DailyActivity $actividad): string
+    {
+        return $actividad->name.($actividad->weekday !== null ? self::SUFIJO_SOLO_SABADO : '');
     }
 
     /**
@@ -1017,6 +1125,44 @@ class PlantillaDelPlanificador
     {
         self::escribir($hoja, self::ETIQUETA_FECHA, $fecha);
         self::escribir($hoja, self::ETIQUETA_ENERGIA, 'Media');
+
+        // Las secciones nuevas del formato, con datos de ejemplo.
+        self::escribir($hoja, self::ETIQUETA_META_GOAL, 'Ordenar mis mañanas y sostener la caminata');
+        self::escribir($hoja, self::ETIQUETA_META_WHY, 'Porque me da calma y energía para el resto del día.');
+
+        foreach ([
+            'caminata' => ['Sí', '30'],
+            'meditacion' => ['Sí', '15'],
+            'temas_whatsapp' => ['Sí', null],
+            'alimentacion' => ['No', null],
+        ] as $clave => [$hecho, $minutos]) {
+            $actividad = DailyActivity::query()->where('clave', $clave)->first();
+            $filaActividad = $actividad
+                ? self::buscarFila($hoja, self::etiquetaDeActividad($actividad))
+                : null;
+
+            if ($filaActividad === null) {
+                continue;
+            }
+
+            self::escribirEnFila($hoja, $filaActividad, self::COLUMNA_VALOR, $hecho);
+
+            if ($minutos !== null) {
+                self::escribirEnFila($hoja, $filaActividad, self::COLUMNA_DETALLE, $minutos);
+            }
+        }
+
+        self::escribir($hoja, self::ETIQUETA_PERSONAL_HICE, 'Escribí la primera acción y la sostuve 20 minutos.');
+        self::escribir($hoja, self::ETIQUETA_PERSONAL_AYUDO, 'La lista corta y el bloque de la mañana.');
+        self::escribir($hoja, self::ETIQUETA_PERSONAL_DIFICULTO, 'El teléfono y las notificaciones.');
+
+        $fechaCarbon = Helper::toCarbon($fecha);
+
+        if ($fechaCarbon?->isSunday()) {
+            foreach (WeeklyReflection::PREGUNTAS as $pregunta) {
+                self::escribir($hoja, $pregunta, 'Una respuesta de ejemplo para esta pregunta.');
+            }
+        }
 
         $objetivos = [
             'Terminar el informe mensual',

@@ -6,11 +6,13 @@ use App\Excel\PlantillaDelPlanificador as Plantilla;
 use App\Helpers\Helper;
 use App\Models\ActionBlockDuration;
 use App\Models\ActionBlockOutcome;
+use App\Models\DailyActivity;
 use App\Models\DailyPlan;
 use App\Models\EnergyLevel;
 use App\Models\GoalType;
 use App\Models\PreparationItem;
 use App\Models\ReflectionQuestion;
+use App\Models\WeeklyReflection;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +36,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * los 3 objetivos, al menos una franja con hora y actividad, o el cierre del
  * día. Las secciones opcionales (antes de empezar, procrastinación, bloque de
  * acción y notas) se toleran: lo que no se reconozca queda anotado como aviso.
+ *
+ * El formato nuevo agrega la meta semanal, las actividades diarias con sus
+ * minutos, el seguimiento personal y la reflexión del domingo. Se leen cuando
+ * están presentes; los libros anteriores, que no las traen, se importan igual.
  */
 class ImportadorDePlanificacion
 {
@@ -343,27 +349,264 @@ class ImportadorDePlanificacion
         $bloques = self::leerBloqueDeAccion($hoja, $indice, $catalogos, $fecha, $avisos);
         $notas = self::leerNotas($hoja, $indice, $avisos);
 
+        // 7. Secciones nuevas: meta semanal, actividades, seguimiento y
+        // reflexión del domingo. Las tres últimas son opcionales.
+        $metaSemanal = self::leerMetaSemanal($hoja, $indice, $avisos);
+        $actividades = self::leerActividades($hoja, $indice, $titulos, $catalogos, $fecha, $avisos);
+        $metaPersonal = self::leerMetaPersonal($hoja, $indice, $avisos);
+        $reflexionSemanal = self::leerReflexionSemanal($hoja, $indice, $fecha, $avisos);
+
+        $datos = array_merge([
+            'plan_date' => $fecha->toDateString(),
+            'energy_level_id' => $energiaId,
+            'goals' => $objetivos,
+            'schedule' => $horario,
+            'preparation' => $preparacion,
+            'reflections' => $reflexiones,
+            'action_blocks' => $bloques,
+            'notes' => $notas,
+        ], $cierre, $metaPersonal);
+
+        if ($metaSemanal !== null) {
+            $datos['weekly_goal'] = $metaSemanal;
+        }
+
+        if ($actividades !== []) {
+            $datos['activities'] = $actividades;
+        }
+
+        if ($reflexionSemanal !== []) {
+            $datos['weekly_reflection'] = $reflexionSemanal;
+        }
+
         return [
             'hoja' => $hoja->getTitle(),
             'fecha' => $fecha->toDateString(),
             'accion' => self::CREAR,
             'motivo' => null,
             'avisos' => $avisos,
-            'datos' => array_merge([
-                'plan_date' => $fecha->toDateString(),
-                'energy_level_id' => $energiaId,
-                'goals' => $objetivos,
-                'schedule' => $horario,
-                'preparation' => $preparacion,
-                'reflections' => $reflexiones,
-                'action_blocks' => $bloques,
-                'notes' => $notas,
-            ], $cierre),
+            'datos' => $datos,
         ];
     }
 
     /* ======================================================================
-     |  Secciones opcionales
+     |  Secciones nuevas del formato
+     ====================================================================== */
+
+    /**
+     * "Mi meta semanal": la meta y su porqué.
+     *
+     * Es opcional en el libro para no romper los libros anteriores. Si viene
+     * vacía, el día se vincula a la meta que ya exista para esa semana (si la
+     * hay); si viene escrita, se guarda una sola vez por semana y la comparten
+     * todos sus días.
+     */
+    private static function leerMetaSemanal(Worksheet $hoja, array $indice, array &$avisos): ?array
+    {
+        if (! isset($indice[Plantilla::clave(Plantilla::TITULO_META_SEMANAL)])) {
+            return null;
+        }
+
+        $goal = self::recortar(
+            self::texto($hoja, $indice[Plantilla::clave(Plantilla::ETIQUETA_META_GOAL)] ?? 0, Plantilla::COLUMNA_VALOR),
+            2000,
+            'La meta semanal',
+            $avisos
+        );
+
+        $why = self::recortar(
+            self::texto($hoja, $indice[Plantilla::clave(Plantilla::ETIQUETA_META_WHY)] ?? 0, Plantilla::COLUMNA_VALOR),
+            2000,
+            'El porqué de la meta semanal',
+            $avisos
+        );
+
+        if ($goal === null) {
+            if ($why !== null) {
+                $avisos[] = 'Hay un porqué para la meta semanal, pero falta la meta: no se guardó.';
+            }
+
+            return null;
+        }
+
+        return ['goal' => $goal, 'why_important' => $why];
+    }
+
+    /**
+     * "Actividades diarias": cada hábito con su Sí/No y sus minutos.
+     *
+     * Las actividades que no aplican al día (las del sábado fuera del sábado)
+     * se ignoran. Si una viene marcada, se deja el aviso para que se vea en el
+     * reporte de la corrida.
+     *
+     * @return list<array{daily_activity_id: int, is_done: bool, minutes: ?int}>
+     */
+    private static function leerActividades(
+        Worksheet $hoja,
+        array $indice,
+        array $titulos,
+        array $catalogos,
+        Carbon $fecha,
+        array &$avisos
+    ): array {
+        $fila = $indice[Plantilla::clave(Plantilla::TITULO_ACTIVIDADES)] ?? null;
+
+        if ($fila === null) {
+            return [];
+        }
+
+        $lista = [];
+
+        for ($actual = $fila + 2; $actual <= self::finDeSeccion($hoja, $titulos, $fila); $actual++) {
+            $nombre = self::texto($hoja, $actual, Plantilla::COLUMNA_ETIQUETA);
+
+            if ($nombre === '') {
+                continue;
+            }
+
+            // El rótulo de las del sábado lleva el sufijo; se quita para buscar
+            // la actividad en el catálogo.
+            $nombre = trim(preg_replace(
+                '/\s*'.preg_quote(Plantilla::SUFIJO_SOLO_SABADO, '/').'\s*$/u',
+                '',
+                $nombre
+            ) ?? $nombre);
+
+            /** @var DailyActivity|null $actividad */
+            $actividad = $catalogos['actividades'][Helper::normalize($nombre)] ?? null;
+
+            if (! $actividad) {
+                $avisos[] = 'La actividad «'.$nombre.'» no está en el catálogo: se ignoró.';
+
+                continue;
+            }
+
+            $crudoHecho = self::valor($hoja, $actual, Plantilla::COLUMNA_VALOR);
+
+            if (Helper::isBlank($crudoHecho)) {
+                $hecho = false;
+            } else {
+                $hecho = Helper::boolFromSpreadsheet($crudoHecho);
+
+                if ($hecho === null) {
+                    $avisos[] = 'La actividad «'.$nombre.'» no tiene un Sí/No entendible; se tomó como No.';
+                    $hecho = false;
+                }
+            }
+
+            if (! $actividad->aplicaA($fecha)) {
+                if ($hecho) {
+                    $avisos[] = 'La actividad «'.$nombre.'» solo aplica el sábado: se ignoró.';
+                }
+
+                continue;
+            }
+
+            $minutos = null;
+
+            if ($actividad->requires_minutes) {
+                $crudo = self::valor($hoja, $actual, Plantilla::COLUMNA_DETALLE);
+
+                if (! Helper::isBlank($crudo)) {
+                    if (is_numeric($crudo)) {
+                        $minutos = max(0, min(1440, (int) round((float) $crudo)));
+                    } else {
+                        $avisos[] = 'Los minutos de «'.$nombre.'» no son un número: se ignoraron.';
+                    }
+                }
+            }
+
+            $lista[] = [
+                'daily_activity_id' => $actividad->id,
+                'is_done' => $hecho,
+                'minutes' => $minutos,
+            ];
+        }
+
+        return $lista;
+    }
+
+    /**
+     * "Mi meta personal": el seguimiento del día. Es opcional.
+     *
+     * @return array<string, string>
+     */
+    private static function leerMetaPersonal(Worksheet $hoja, array $indice, array &$avisos): array
+    {
+        if (! isset($indice[Plantilla::clave(Plantilla::TITULO_META_PERSONAL)])) {
+            return [];
+        }
+
+        $valores = [];
+
+        foreach ([
+            'personal_done_today' => Plantilla::ETIQUETA_PERSONAL_HICE,
+            'personal_helped' => Plantilla::ETIQUETA_PERSONAL_AYUDO,
+            'personal_hard' => Plantilla::ETIQUETA_PERSONAL_DIFICULTO,
+        ] as $campo => $etiqueta) {
+            $texto = self::recortar(
+                self::texto($hoja, $indice[Plantilla::clave($etiqueta)] ?? 0, Plantilla::COLUMNA_VALOR),
+                2000,
+                '«'.$etiqueta.'»',
+                $avisos
+            );
+
+            if ($texto !== null) {
+                $valores[$campo] = $texto;
+            }
+        }
+
+        return $valores;
+    }
+
+    /**
+     * "Reflexión de la semana": las seis preguntas del domingo.
+     *
+     * En los demás días no se guarda nada: la reflexión es semanal y el domingo
+     * es el día que la cierra.
+     *
+     * @return array<string, string>
+     */
+    private static function leerReflexionSemanal(
+        Worksheet $hoja,
+        array $indice,
+        Carbon $fecha,
+        array &$avisos
+    ): array {
+        if (! isset($indice[Plantilla::clave(Plantilla::TITULO_REFLEXION)])) {
+            return [];
+        }
+
+        $valores = [];
+
+        foreach (WeeklyReflection::PREGUNTAS as $clave => $pregunta) {
+            $texto = self::recortar(
+                self::texto($hoja, $indice[Plantilla::clave($pregunta)] ?? 0, Plantilla::COLUMNA_VALOR),
+                2000,
+                'La respuesta a «'.$pregunta.'»',
+                $avisos
+            );
+
+            if ($texto !== null) {
+                $valores[$clave] = $texto;
+            }
+        }
+
+        if ($valores === []) {
+            return [];
+        }
+
+        if (! $fecha->isSunday()) {
+            $avisos[] = 'La reflexión de la semana solo se guarda el domingo: se ignoró en esta hoja.';
+
+            return [];
+        }
+
+        return $valores;
+    }
+
+    /* ======================================================================
+     |  Secciones opcionales anteriores
      ====================================================================== */
 
     /** "Antes de empezar": cada ítem del catálogo con su Sí/No y su detalle. */
@@ -582,6 +825,14 @@ class ImportadorDePlanificacion
 
             'items' => PreparationItem::query()->get()
                 ->mapWithKeys(fn (PreparationItem $item) => [Helper::normalize($item->name) => $item->id])->all(),
+
+            // Actividades diarias: se guarda el modelo para conocer si pide
+            // minutos y a qué día de la semana aplica.
+            'actividades' => DailyActivity::query()->get()
+                ->mapWithKeys(fn (DailyActivity $actividad) => [
+                    Helper::normalize($actividad->name) => $actividad,
+                    Helper::normalize($actividad->clave) => $actividad,
+                ])->all(),
 
             'preguntas' => ReflectionQuestion::query()
                 ->where('category', ReflectionQuestion::CATEGORY_PROCRASTINATION)->get()

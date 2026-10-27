@@ -45,8 +45,16 @@ use ZipArchive;
  */
 class DocumentoDelDiario
 {
-    /** Disco, dentro de storage/app/private, donde viven los archivos. */
-    private const CARPETA_BASE = 'documentos';
+    /**
+     * Disco, dentro de storage/app/private, donde viven los archivos.
+     *
+     * La revisión va en el nombre de la carpeta: cuando cambia el diseño del
+     * documento (como con las secciones nuevas del diario) los PDF guardados
+     * dejan de encontrarse y se regeneran solos, en vez de seguir sirviendo la
+     * versión anterior. Los archivos viejos quedan en su carpeta y se pueden
+     * borrar a mano.
+     */
+    private const CARPETA_BASE = 'documentos-v2';
 
     /**
      * Revisión de la conversión a imagen.
@@ -68,6 +76,31 @@ class DocumentoDelDiario
     public static function de(DailyPlan $plan): static
     {
         return new static($plan);
+    }
+
+    /**
+     * El logotipo institucional como data URI, para incrustarlo en los PDF.
+     *
+     * Se usa la versión con fondo blanco: dompdf no compone bien la
+     * transparencia de un PNG y la dibujaría sobre negro. La versión
+     * transparente queda para la web. Se lee de public/img y viaja dentro del
+     * HTML, así dompdf no necesita permisos especiales ni rutas absolutas.
+     */
+    public static function logoDataUri(): ?string
+    {
+        foreach (['img/logo-transformaconecta-blanco.png', 'img/logo-transformaconecta.png'] as $relativa) {
+            $ruta = public_path($relativa);
+
+            if (is_file($ruta)) {
+                $contenido = @file_get_contents($ruta);
+
+                if ($contenido !== false) {
+                    return 'data:image/png;base64,'.base64_encode($contenido);
+                }
+            }
+        }
+
+        return null;
     }
 
     /* ======================================================================
@@ -228,6 +261,12 @@ class DocumentoDelDiario
         $html = view('diario.pdf', [
             'plan' => $this->plan,
             'marca' => $marca,
+            'logo' => self::logoDataUri(),
+            // La reflexión de la semana no es una relación del día: se busca por
+            // el lunes de la semana que el diario está cerrando.
+            'reflexionSemanal' => $this->plan->reflexionSemanal(),
+            // La meta de la semana, con respaldo por fecha para diarios viejos.
+            'metaSemanal' => $this->plan->metaSemanal(),
             // El gráfico del día viaja como imagen ya hecha: el PDF no ejecuta
             // JavaScript, así que se dibuja en el servidor.
             'grafico' => AgendaPng::dataUri(AgendaDelDia::datos(

@@ -37,7 +37,7 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/2.3.8/css/dataTables.bootstrap5.min.css">
 
     {{-- Estilos propios: la paleta institucional vive aquí --}}
-    <link rel="stylesheet" href="{{ asset('css/styles.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/styles.css') }}?v={{ filemtime(public_path('css/styles.css')) }}">
 
     {{-- Buzón de notificaciones: campanita, panel y avisos --}}
     <link rel="stylesheet" href="{{ asset('css/notificaciones.css') }}">
@@ -60,12 +60,11 @@
                 <i class="bi bi-list" aria-hidden="true"></i>
             </button>
 
-            {{-- Marca. Para usar el logotipo real, basta con sustituir este
-                 bloque por: <img src="{{ asset('img/logo.png') }}" class="tc-marca__logo" alt="Transforma-Conecta"> --}}
-            <div class="tc-marca">
-                <span class="tc-marca__transforma">TRANSFORMA</span>
-                <span class="tc-marca__conecta">Conecta</span>
-            </div>
+            {{-- Logotipo institucional, al lado del botón hamburguesa --}}
+            <a class="tc-marca" href="{{ route('home') }}" aria-label="Transforma-Conecta · Inicio">
+                <img src="{{ asset('img/logo-transformaconecta.png') }}?v={{ filemtime(public_path('img/logo-transformaconecta.png')) }}"
+                     class="tc-marca__logo" alt="Transforma-Conecta">
+            </a>
 
             {{-- Títulos: H3, H1 y H2, en el mismo orden de la hoja impresa --}}
             <div class="tc-cabecera__titulos">
@@ -87,7 +86,10 @@
 
         </div>
 
-        <p class="tc-cabecera__banda">ORGÁNIZATE · ACTÚA · AVANZA</p>
+        <p class="tc-cabecera__banda">
+            <span class="tc-cabecera__banda-titulo">MI RUTINA ME FORTALECE</span>
+            <span class="tc-cabecera__banda-lema">PEQUEÑAS ACCIONES, GRANDES CAMBIOS</span>
+        </p>
     </div>
 </header>
 
@@ -190,10 +192,13 @@
      PIE
      ====================================================================== --}}
 <footer class="tc-pie">
-    <div class="tc-contenedor">
-        <strong>MI PLANIFICADOR DIARIO</strong> · ORGÁNIZATE · ACTÚA · AVANZA
-        <br>
-        Programa de Desarrollo Personal "Transforma-Conecta" · {{ now()->year }}
+    <div class="tc-contenedor tc-pie__cuerpo">
+        <strong class="tc-pie__titulo">MI PLANIFICADOR DIARIO</strong>
+        <span class="tc-pie__lema">LO IMPORTANTE NO ES EL PENSAMIENTO, LO IMPORTANTE ES LA ACCIÓN</span>
+        <span class="tc-pie__futuro">¡TRANSFORMANDO NUESTRO FUTURO!</span>
+        <span class="tc-pie__programa">
+            Programa de Desarrollo Personal "Transforma-Conecta" · ©{{ now()->year }}
+        </span>
     </div>
 </footer>
 

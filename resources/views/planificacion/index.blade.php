@@ -113,11 +113,21 @@
 
             <div class="tf-montar">
                 <div class="tf-montar__campo">
-                    <label class="tf-etiqueta tf-obligatorio" for="archivo">Libro de Excel (.xlsx)</label>
-                    <input class="form-control tf-montar__archivo" type="file" name="archivo" id="archivo"
-                           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                    <label class="tf-etiqueta tf-obligatorio" for="archivos">Libros de Excel (.xlsx)</label>
+                    <input class="form-control tf-montar__archivo" type="file" name="archivos[]" id="archivos"
+                           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                           multiple required>
 
-                    @error('archivo')
+                    {{-- El resumen de lo elegido: el campo nativo sólo dice "N archivos" --}}
+                    <p class="tf-ayuda mt-2 mb-0" id="archivos-elegidos" aria-live="polite">
+                        Puedes elegir uno o varios libros a la vez: todos tienen que ser .xlsx.
+                    </p>
+
+                    @error('archivos')
+                        <p class="tf-campo--error">{{ $message }}</p>
+                    @enderror
+
+                    @error('archivos.*')
                         <p class="tf-campo--error">{{ $message }}</p>
                     @enderror
                 </div>
@@ -127,17 +137,17 @@
                     Montar en la cola
                 </button>
 
-                {{-- Limpia el campo del archivo sin enviar el formulario --}}
-                <button type="button" class="tc-boton tc-boton--contorno" id="archivo-limpiar" disabled>
+                {{-- Limpia el campo de los archivos sin enviar el formulario --}}
+                <button type="button" class="tc-boton tc-boton--contorno" id="archivos-limpiar" disabled>
                     <i class="bi bi-eraser" aria-hidden="true"></i>
                     Limpiar
                 </button>
             </div>
 
             <p class="tf-ayuda">
-                El módulo <strong>sólo guarda</strong>: el libro queda en la cola y se procesa en la
-                corrida de las {{ $horaDeLaCorrida }}. Montarlo no toca la base de datos de los diarios.
-                Peso máximo: {{ $pesoMaximo }}.
+                El módulo <strong>sólo guarda</strong>: los libros quedan en la cola y se procesan en la
+                corrida de las {{ $horaDeLaCorrida }}. Montarlos no toca la base de datos de los diarios.
+                Peso máximo: {{ $pesoMaximo }} por libro.
             </p>
         </form>
     </section>
@@ -276,9 +286,10 @@
 
             var $cola = $('#cola-contenedor');
             var $corrida = $('#corrida-contenedor');
-            var $archivo = $('#archivo');
-            var $limpiar = $('#archivo-limpiar');
-            var $formulario = $archivo.closest('form');
+            var $archivos = $('#archivos');
+            var $elegidos = $('#archivos-elegidos');
+            var $limpiar = $('#archivos-limpiar');
+            var $formulario = $archivos.closest('form');
 
             var seleccion = [];          // libros elegidos, aunque cambien de página
             var temporizador = null;     // el próximo latido
@@ -629,14 +640,31 @@
             });
 
             /* ==============================================================
-               Montar el libro (AJAX, sin recargar)
+               Montar los libros (AJAX, sin recargar)
                ============================================================== */
 
             $formulario.on('submit', function (evento) {
                 evento.preventDefault();
 
-                if (! $archivo[0] || ! $archivo[0].files.length) {
-                    P.Alerta.aviso('Elige el libro de Excel que vas a montar.');
+                var libros = archivosElegidos();
+
+                if (! libros.length) {
+                    P.Alerta.aviso('Elige al menos un libro de Excel (.xlsx) para montar.');
+
+                    return;
+                }
+
+                // Se revisa acá, antes de mandar: el campo acepta sólo .xlsx, pero
+                // el explorador de archivos siempre deja elegir "todos los archivos".
+                var otros = libros.filter(function (libro) {
+                    return ! esXlsx(libro);
+                });
+
+                if (otros.length) {
+                    P.Alerta.aviso('Sólo se pueden montar libros .xlsx. Revisa: '
+                        + otros.map(function (libro) {
+                            return libro.name;
+                        }).join(', ') + '.');
 
                     return;
                 }
@@ -661,13 +689,17 @@
                     if (! respuesta || respuesta.ok === false) {
                         P.Alerta.error(respuesta && respuesta.message
                             ? respuesta.message
-                            : 'No se pudo montar el libro.');
+                            : 'No se pudieron montar los libros.');
 
                         return;
                     }
 
-                    limpiarArchivo();
-                    P.Alerta.exito(respuesta.message, 'Libro montado en la cola');
+                    var montados = (respuesta.data && respuesta.data.archivos) || [];
+
+                    limpiarArchivos();
+                    P.Alerta.exito(respuesta.message, montados.length > 1
+                        ? 'Libros montados en la cola'
+                        : 'Libro montado en la cola');
                     refrescar();
                 }).fail(function (xhr) {
                     P.Alerta.error(P.Ajax.mensajeDeError(xhr));
@@ -738,22 +770,54 @@
             });
 
             /* ==============================================================
-               El campo del archivo: limpiar
+               El campo de los archivos: varios a la vez y todos .xlsx
                ============================================================== */
 
-            function revisarArchivo() {
-                $limpiar.prop('disabled', ! $archivo[0] || ! $archivo[0].files.length);
+            /** Los libros elegidos, como arreglo (el campo ya es múltiple). */
+            function archivosElegidos() {
+                if (! $archivos[0] || ! $archivos[0].files) {
+                    return [];
+                }
+
+                return Array.prototype.slice.call($archivos[0].files);
             }
 
-            function limpiarArchivo() {
-                $archivo.val('');
-                revisarArchivo();
+            /** ¿Es un libro de Excel? Acá sólo se puede mirar la extensión. */
+            function esXlsx(archivo) {
+                return /\.xlsx$/i.test(archivo.name || '');
             }
 
-            $archivo.on('change', revisarArchivo);
-            revisarArchivo();
+            /** El resumen de lo elegido, debajo del campo. */
+            function resumirArchivos() {
+                var libros = archivosElegidos();
 
-            $limpiar.on('click', limpiarArchivo);
+                if (! libros.length) {
+                    $elegidos.text('Puedes elegir uno o varios libros a la vez: todos tienen que ser .xlsx.');
+
+                    return;
+                }
+
+                $elegidos.text(libros.length === 1
+                    ? '1 libro elegido: ' + libros[0].name
+                    : libros.length + ' libros elegidos: ' + libros.map(function (libro) {
+                        return libro.name;
+                    }).join(', '));
+            }
+
+            function revisarArchivos() {
+                $limpiar.prop('disabled', archivosElegidos().length === 0);
+                resumirArchivos();
+            }
+
+            function limpiarArchivos() {
+                $archivos.val('');
+                revisarArchivos();
+            }
+
+            $archivos.on('change', revisarArchivos);
+            revisarArchivos();
+
+            $limpiar.on('click', limpiarArchivos);
 
             /* ==============================================================
                La corrida a mano: confirmación, barra de progreso y resultado

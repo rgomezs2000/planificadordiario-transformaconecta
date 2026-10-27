@@ -37,6 +37,10 @@ Route::prefix('diario')->name('diario.')->group(function () {
     Route::get('/', [DailyController::class, 'index'])->name('index');
     Route::get('/today', [DailyController::class, 'today'])->name('today');
 
+    // La meta de la semana de una fecha, para que el formulario la precargue
+    // cuando se elige un día de una semana que ya la tiene escrita.
+    Route::get('/meta-semanal', [DailyController::class, 'metaSemanal'])->name('meta-semanal');
+
     // Días ya guardados: la página del listado y sus datos para la tabla
     Route::get('/listado', [DailyPlanController::class, 'index'])->name('listado');
     Route::get('/tabla', [DailyPlanController::class, 'list'])->name('tabla');
@@ -67,6 +71,10 @@ Route::prefix('diario')->name('diario.')->group(function () {
         // del final de "Mi horario de hoy" confirma con bootbox y llama aquí
         // por AJAX: así se marca el día sin abrir el formulario completo.
         Route::patch('/{dailyPlan}/horario', [DailyPlanController::class, 'updateSchedule'])->name('horario');
+
+        // Actividades diarias desde la vista de sólo lectura: mismo patrón que
+        // el horario. Guarda el estado y los minutos sin abrir el formulario.
+        Route::patch('/{dailyPlan}/actividades', [DailyPlanController::class, 'updateActivities'])->name('actividades');
 
         // Imprimir: el PDF y su versión en imagen. Los dos se guardan en el
         // almacenamiento privado: si ya están hechos se sirven desde ahí y sólo

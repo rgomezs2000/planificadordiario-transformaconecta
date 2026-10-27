@@ -27,6 +27,14 @@ return [
     // diario no exista; se apaga con NOTIFICACIONES_AVISAR_DIARIO_AUSENTE=false.
     'avisar_diario_ausente' => (bool) env('NOTIFICACIONES_AVISAR_DIARIO_AUSENTE', true),
 
+    // Recordatorio de las actividades diarias (caminata, meditación, estudio,
+    // etc.): cuando su hora ya pasó y la actividad sigue sin marcarse, se
+    // pregunta si se realizó. Los minutos de margen evitan que el aviso salga
+    // justo al empezar la hora.
+    'avisar_actividades' => (bool) env('NOTIFICACIONES_AVISAR_ACTIVIDADES', true),
+    'margen_actividades_minutos' => (int) env('NOTIFICACIONES_MARGEN_ACTIVIDADES', 0),
+    'hora_actividades' => env('NOTIFICACIONES_HORA_ACTIVIDADES', '18:00'),
+
     // A partir de qué hora se recuerda que falta el diario del día. Antes de
     // esa hora se entiende que la persona todavía no empezó su jornada.
     'hora_diario_ausente' => env('NOTIFICACIONES_HORA_DIARIO_AUSENTE', '08:00'),

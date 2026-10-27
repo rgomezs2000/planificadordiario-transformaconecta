@@ -40,7 +40,8 @@ class GenerarPlantillaDePlanificacion extends Command
             .PlantillaDelPlanificador::itemsDePreparacion()->count().' ítems de preparación · '
             .PlantillaDelPlanificador::preguntasDeProcrastinacion()->count().' preguntas · '
             .count(PlantillaDelPlanificador::duracionesDeBloque()).' duraciones · '
-            .count(PlantillaDelPlanificador::resultadosDeBloque()).' resultados');
+            .count(PlantillaDelPlanificador::resultadosDeBloque()).' resultados · '
+            .PlantillaDelPlanificador::actividadesDiarias()->count().' actividades diarias');
 
         // Con --desde y --hasta se genera el libro de un período: una hoja por
         // día, ya nombrada, con la fecha puesta y su lista desplegable.

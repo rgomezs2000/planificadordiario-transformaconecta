@@ -2,8 +2,9 @@
     Resumen de desempeño en PDF.
 
     Se arma con lo que devuelve el motor de análisis: los números, los textos
-    (que ya vienen redactados) y los gráficos, que llegan dibujados como
-    imágenes porque el PDF no ejecuta JavaScript.
+    (que ya vienen redactados, incluido el dictamen clínico y ético y las
+    recomendaciones) y los gráficos, que llegan dibujados como imágenes porque
+    el PDF no ejecuta JavaScript.
 
     Va día por día: primero la lectura de cada diario y después los cruces del
     alcance elegido. El tono es descriptivo, sobre los propios registros, sin
@@ -28,6 +29,7 @@
 
         .cabecera td { vertical-align: middle; }
         .marca { width: 128px; }
+        .marca img { height: 52px; width: auto; }
         .marca .t1 { font-size: 14px; font-weight: bold; color: #F0600C; letter-spacing: 0.5px; }
         .marca .t2 { font-size: 14px; font-weight: bold; color: #00AE9C; margin-top: -2px; }
         .centro { text-align: center; }
@@ -41,13 +43,14 @@
             padding: 5px 0;
             background: #00AE9C;
             color: #FFFFFF;
-            font-size: 8.5px;
-            font-weight: bold;
-            letter-spacing: 1.5px;
             text-align: center;
         }
+        .banda__titulo { font-size: 9px; font-weight: bold; letter-spacing: 2px; }
+        .banda__lema { font-size: 6.6px; font-weight: bold; letter-spacing: 1.6px; opacity: 0.92; }
 
         .seccion { margin-bottom: 9px; page-break-inside: avoid; }
+        .seccion--larga { page-break-inside: auto; }
+        .seccion--nueva-pagina { page-break-before: always; }
         .titulo-seccion {
             padding: 4px 8px;
             background: #002060;
@@ -65,33 +68,55 @@
         .alcance { font-size: 9.5px; font-weight: bold; color: #002060; }
         .chico { font-size: 7.4px; color: #6B7A90; }
 
-        /* Los cuatro números grandes del período. */
+        /* Los cinco números grandes del período. */
         .numeros td {
-            width: 25%;
+            width: 20%;
             padding: 7px 4px;
             border: 1px solid #CFD9E6;
             text-align: center;
         }
-        .numeros .valor { font-size: 17px; font-weight: bold; color: #002060; }
-        .numeros .rotulo { font-size: 6.8px; color: #6B7A90; letter-spacing: 0.4px; }
+        .numeros .valor { font-size: 15px; font-weight: bold; color: #002060; }
+        .numeros .rotulo { font-size: 6.4px; color: #6B7A90; letter-spacing: 0.3px; }
 
         /* Día por día. */
         .dias th {
             padding: 4px 5px;
             background: #002060;
             color: #FFFFFF;
-            font-size: 6.8px;
-            letter-spacing: 0.4px;
+            font-size: 6.6px;
+            letter-spacing: 0.3px;
             text-align: center;
         }
         .dias td {
             padding: 4px 5px;
             border-bottom: 1px solid #E4EAF2;
-            font-size: 7.6px;
+            font-size: 7.4px;
             text-align: center;
         }
         .dias td.izq { text-align: left; }
         .dias .fuerte { font-weight: bold; color: #002060; }
+
+        /* Tablas de metas y reflexiones. */
+        .semanas th {
+            padding: 4px 5px;
+            background: #002060;
+            color: #FFFFFF;
+            font-size: 6.8px;
+            text-align: left;
+        }
+        .semanas td {
+            padding: 4px 5px;
+            border-bottom: 1px solid #E4EAF2;
+            font-size: 7.4px;
+            vertical-align: top;
+        }
+        .semanas td.fuerte { font-weight: bold; color: #002060; }
+
+        .reflexion { margin-bottom: 6px; page-break-inside: avoid; }
+        .reflexion:last-child { margin-bottom: 0; }
+        .reflexion__titulo { font-size: 7.6px; font-weight: bold; color: #002060; margin-bottom: 2px; }
+        .reflexion__par { margin: 0 0 1px; }
+        .reflexion__pregunta { color: #0080D0; font-weight: bold; }
 
         .texto p { margin: 0 0 3px; }
         .texto p:last-child { margin-bottom: 0; }
@@ -118,8 +143,11 @@
             font-size: 6.8px;
             color: #6B7A90;
             text-align: center;
+            line-height: 1.5;
         }
         .pie strong { color: #002060; }
+        .pie .lema { color: #F0600C; font-weight: bold; }
+        .pie .futuro { color: #00AE9C; font-weight: bold; }
 
         .aviso-muestra {
             margin-top: 8px;
@@ -139,8 +167,12 @@
 <table class="cabecera">
     <tr>
         <td class="marca">
-            <div class="t1">TRANSFORMA</div>
-            <div class="t2">Conecta</div>
+            @if ($logo)
+                <img src="{{ $logo }}" alt="Transforma-Conecta">
+            @else
+                <div class="t1">TRANSFORMA</div>
+                <div class="t2">Conecta</div>
+            @endif
         </td>
         <td class="centro">
             <div class="programa">PROGRAMA DE DESARROLLO PERSONAL "TRANSFORMA-CONECTA"</div>
@@ -153,7 +185,10 @@
     </tr>
 </table>
 
-<div class="banda">ORGÁNIZATE - ACTÚA - AVANZA</div>
+<div class="banda">
+    <div class="banda__titulo">MI RUTINA ME FORTALECE</div>
+    <div class="banda__lema">PEQUEÑAS ACCIONES, GRANDES CAMBIOS</div>
+</div>
 
 {{-- ============================== ALCANCE ============================= --}}
 <table class="seccion">
@@ -193,6 +228,18 @@
             <div class="rotulo">DE LOS OBJETIVOS ({{ $analisis['global']['objetivos_hechos'] }}/{{ $analisis['global']['objetivos_total'] }})</div>
         </td>
         <td>
+            <div class="valor">
+                {{ (int) $analisis['global']['actividades_total'] > 0 ? $analisis['global']['actividades_pct'].'%' : '—' }}
+            </div>
+            <div class="rotulo">
+                @if ((int) $analisis['global']['actividades_total'] > 0)
+                    ACTIVIDADES ({{ $analisis['global']['actividades_hechas'] }}/{{ $analisis['global']['actividades_total'] }})
+                @else
+                    SIN ACTIVIDADES REGISTRADAS
+                @endif
+            </div>
+        </td>
+        <td>
             <div class="valor">{{ $analisis['global']['senales_promedio'] }}</div>
             <div class="rotulo">SEÑALES POR DÍA ({{ $analisis['global']['senales'] }} EN TOTAL)</div>
         </td>
@@ -201,9 +248,21 @@
 
 {{-- =========================== LOS TEXTOS ============================= --}}
 @foreach ($textos as $clave => $frases)
-    <table class="seccion">
+    @php
+        $color = match ($clave) {
+            'mal' => 'naranja',
+            'procrastinacion', 'dictamen' => 'rojo',
+            'recomendaciones' => 'azul',
+            'actividades', 'metas', 'energia' => 'turquesa',
+            default => 'turquesa',
+        };
+        $larga = in_array($clave, ['dictamen', 'recomendaciones'], true);
+        $nuevaPagina = $clave === 'dictamen';
+    @endphp
+
+    <table class="seccion {{ $larga ? 'seccion--larga' : '' }} {{ $nuevaPagina ? 'seccion--nueva-pagina' : '' }}">
         <tr>
-            <td class="titulo-seccion {{ $clave === 'mal' ? 'naranja' : ($clave === 'procrastinacion' ? 'rojo' : 'turquesa') }}">
+            <td class="titulo-seccion {{ $color }}">
                 {{ mb_strtoupper($titulos[$clave] ?? $clave) }}
             </td>
         </tr>
@@ -217,6 +276,111 @@
     </table>
 @endforeach
 
+{{-- ======================= METAS SEMANALES ========================== --}}
+@if (! empty($analisis['metasSemanales']))
+    <table class="seccion">
+        <tr>
+            <td class="titulo-seccion turquesa">METAS SEMANALES REGISTRADAS</td>
+        </tr>
+        <tr>
+            <td class="cuerpo">
+                <table class="semanas">
+                    <thead>
+                        <tr>
+                            <th style="width: 21%;">SEMANA</th>
+                            <th style="width: 38%;">META</th>
+                            <th style="width: 25%;">POR QUÉ ES IMPORTANTE</th>
+                            <th style="width: 8%;">DÍAS</th>
+                            <th style="width: 8%;">OBJETIVOS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($analisis['metasSemanales'] as $semana)
+                            <tr>
+                                <td class="fuerte">{{ $semana['etiqueta'] }}</td>
+                                <td>{{ $semana['goal'] ?: 'Sin meta escrita' }}</td>
+                                <td>{{ $semana['why_important'] ?: '—' }}</td>
+                                <td>{{ $semana['dias'] }} ({{ $semana['dias_con_seguimiento'] }} seguim.)</td>
+                                <td>{{ $semana['objetivos_pct'] }}%</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+    </table>
+@endif
+
+{{-- ==================== REFLEXIONES SEMANALES ======================= --}}
+@if (! empty($analisis['reflexionesSemanales']))
+    <table class="seccion seccion--larga">
+        <tr>
+            <td class="titulo-seccion rojo">REFLEXIONES DE LA SEMANA</td>
+        </tr>
+        <tr>
+            <td class="cuerpo">
+                @foreach ($analisis['reflexionesSemanales'] as $reflexion)
+                    @php
+                        $respuestas = array_filter(
+                            $reflexion['respuestas'],
+                            fn (array $fila) => ! \App\Helpers\Helper::isBlank($fila['respuesta'])
+                        );
+                    @endphp
+
+                    @if ($respuestas !== [])
+                        <div class="reflexion">
+                            <div class="reflexion__titulo">{{ $reflexion['etiqueta'] }}</div>
+
+                            @foreach ($respuestas as $fila)
+                                <p class="reflexion__par">
+                                    <span class="reflexion__pregunta">{{ $fila['pregunta'] }}</span>
+                                    {{ $fila['respuesta'] }}
+                                </p>
+                            @endforeach
+                        </div>
+                    @endif
+                @endforeach
+            </td>
+        </tr>
+    </table>
+@endif
+
+{{-- ================= CUMPLIMIENTO DE ACTIVIDADES ==================== --}}
+@if ((int) ($analisis['global']['actividades_total'] ?? 0) > 0)
+    <table class="seccion">
+        <tr>
+            <td class="titulo-seccion turquesa">ACTIVIDADES DIARIAS: QUÉ SE SOSTUVO</td>
+        </tr>
+        <tr>
+            <td class="cuerpo">
+                <div class="grafico"><img src="{{ $graficos['actividades'] }}" alt="Cumplimiento de las actividades diarias"></div>
+                <div class="chico">
+                    Cada barra es una actividad diaria. El porcentaje se calcula sobre los días en que esa
+                    actividad estaba disponible; a la derecha, los días cumplidos y el tiempo promedio.
+                </div>
+            </td>
+        </tr>
+    </table>
+@endif
+
+{{-- ================= IMPACTO DE LO QUE SE CUMPLIÓ =================== --}}
+@if (! empty($analisis['impactoActividades']))
+    <table class="seccion">
+        <tr>
+            <td class="titulo-seccion azul">LO QUE SE CUMPLIÓ Y CÓMO ACOMPAÑÓ AL RENDIMIENTO</td>
+        </tr>
+        <tr>
+            <td class="cuerpo">
+                <div class="grafico"><img src="{{ $graficos['impacto'] }}" alt="Rendimiento según actividades cumplidas"></div>
+                <div class="chico">
+                    Compara el rendimiento promedio de los días en que la actividad se hizo con el de los
+                    días en que no. Es una asociación del período, no una relación de causa.
+                </div>
+            </td>
+        </tr>
+    </table>
+@endif
+
 {{-- ================ PERFORMANCE VS PROCRASTINACIÓN ==================== --}}
 <table class="seccion">
     <tr>
@@ -224,11 +388,19 @@
     </tr>
     <tr>
         <td class="cuerpo">
-            <div class="grafico"><img src="{{ $graficos['procrastinacion'] }}" alt="Performance contra procrastinación"></div>
-            <div class="chico">
-                Cada punto es el rendimiento promedio de los días con esa cantidad de señales marcadas.
-                El cuadrado turquesa es hasta dónde no cuesta; el rojo, desde dónde el rendimiento cae.
-            </div>
+            @if ((int) $analisis['global']['senales'] > 0)
+                <div class="grafico"><img src="{{ $graficos['procrastinacion'] }}" alt="Performance contra procrastinación"></div>
+                <div class="chico">
+                    Cada punto es el rendimiento promedio de los días con esa cantidad de señales marcadas;
+                    el tamaño del punto y la etiqueta n indican cuántos días lo sostienen. El cuadrado turquesa
+                    es hasta dónde no cuesta; el rojo, desde dónde el rendimiento cae.
+                </div>
+            @else
+                <p class="chico">
+                    No se marcaron señales de procrastinación en el período, así que no hay cruce que
+                    graficar. La sección de procrastinación explica por qué eso no equivale a "no procrastinar".
+                </p>
+            @endif
         </td>
     </tr>
 </table>
@@ -248,7 +420,7 @@
                         <th>RENDIMIENTO</th>
                         <th>HORARIO</th>
                         <th>OBJETIVOS</th>
-                        <th>PREPARATIVOS</th>
+                        <th>ACTIVIDADES</th>
                         <th>SEÑALES</th>
                     </tr>
                 </thead>
@@ -262,8 +434,8 @@
                                 ({{ $dia['horario_pct'] }}%)</td>
                             <td>{{ $dia['objetivos_hechos'] }}/{{ $dia['objetivos_total'] }}
                                 ({{ $dia['objetivos_pct'] }}%)</td>
-                            <td>{{ $dia['preparativos_hechos'] }}/{{ $dia['preparativos_total'] }}
-                                ({{ $dia['preparativos_pct'] }}%)</td>
+                            <td>{{ $dia['actividades_hechas'] }}/{{ $dia['actividades_total'] }}
+                                ({{ $dia['actividades_pct'] }}%)</td>
                             <td>{{ $dia['senales'] }}</td>
                         </tr>
                     @endforeach
@@ -311,7 +483,8 @@
     <strong>Qué es este documento.</strong> Es la lectura de lo que vos mismo registraste en tus
     planificadores diarios: los números describen hábitos que cumpliste y señales que marcaste.
     No es un diagnóstico ni una valoración sobre tu persona, y no pretende serlo. Una valoración
-    de la salud —física o emocional— corresponde a un profesional.
+    de la salud —física o emocional— corresponde a un profesional. Si el cansancio o la
+    postergación persistente afectan tu ánimo o tu salud, buscar acompañamiento es un acto de cuidado.
 </div>
 
 @php
@@ -333,9 +506,10 @@
 
 {{-- =============================== PIE =============================== --}}
 <div class="pie">
-    <strong>MI PLANIFICADOR DIARIO</strong> · ORGÁNIZATE · ACTÚA · AVANZA<br>
-    Programa de Desarrollo Personal "Transforma-Conecta" ·
-    Generado el {{ \App\Helpers\Helper::dateTime(now()) }}
+    <strong>MI PLANIFICADOR DIARIO</strong><br>
+    <span class="lema">LO IMPORTANTE NO ES EL PENSAMIENTO, LO IMPORTANTE ES LA ACCIÓN</span><br>
+    <span class="futuro">¡TRANSFORMANDO NUESTRO FUTURO!</span><br>
+    Programa de Desarrollo Personal "Transforma-Conecta" · ©{{ now()->year }}
 </div>
 
 @if ($marca)

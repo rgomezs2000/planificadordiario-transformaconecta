@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             ActionBlockDurationSeeder::class,
             ActionBlockOutcomeSeeder::class,
             ReflectionQuestionSeeder::class,
+            DailyActivitySeeder::class,
         ]);
     }
 }

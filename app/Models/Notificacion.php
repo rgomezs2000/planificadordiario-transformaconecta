@@ -49,6 +49,7 @@ class Notificacion extends Model
         'daily_plan_id',
         'plan_goal_id',
         'schedule_entry_id',
+        'daily_activity_id',
         'meta',
         'sincronizada_en',
         'error_firestore',
@@ -66,6 +67,7 @@ class Notificacion extends Model
             'daily_plan_id' => 'integer',
             'plan_goal_id' => 'integer',
             'schedule_entry_id' => 'integer',
+            'daily_activity_id' => 'integer',
         ];
     }
 
@@ -86,6 +88,11 @@ class Notificacion extends Model
     public function scheduleEntry(): BelongsTo
     {
         return $this->belongsTo(ScheduleEntry::class);
+    }
+
+    public function dailyActivity(): BelongsTo
+    {
+        return $this->belongsTo(DailyActivity::class);
     }
 
     /* ======================================================================
@@ -364,6 +371,7 @@ class Notificacion extends Model
             'daily_plan_id' => $this->daily_plan_id,
             'plan_goal_id' => $this->plan_goal_id,
             'schedule_entry_id' => $this->schedule_entry_id,
+            'daily_activity_id' => $this->daily_activity_id,
             'meta' => $this->meta ?? [],
             'creado_en' => $this->created_at,
             'actualizado_en' => $this->updated_at,

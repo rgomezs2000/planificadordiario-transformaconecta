@@ -12,6 +12,15 @@
     hacer con CSS.
     ==========================================================================
 --}}
+@php
+    // Valores con respaldo: la vista también se puede renderizar sola (pruebas
+    // o generación manual) sin pasarle todos los datos.
+    $logo = $logo ?? null;
+    $grafico = $grafico ?? '';
+    $metaSemanal = $metaSemanal ?? $plan->metaSemanal();
+    $reflexionSemanal = $reflexionSemanal ?? $plan->reflexionSemanal();
+@endphp
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -47,6 +56,11 @@
         .marca {
             width: 90px;
             line-height: 1.05;
+        }
+
+        .marca img {
+            height: 46px;
+            width: auto;
         }
 
         .marca .t1 {
@@ -85,11 +99,20 @@
         .banda {
             background-color: #00ae9c;
             color: #ffffff;
-            font-size: 8px;
-            font-weight: bold;
-            letter-spacing: 2px;
             padding: 4px 0;
             text-align: center;
+        }
+
+        .banda__titulo {
+            font-size: 8.5px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        .banda__lema {
+            font-size: 6.6px;
+            font-weight: bold;
+            letter-spacing: 1.4px;
         }
 
         /* ---------- Datos del día ---------- */
@@ -118,7 +141,7 @@
 
         /* ---------- Secciones ---------- */
         .seccion {
-            margin-bottom: 7px;
+            margin-bottom: 6px;
             page-break-inside: avoid;
         }
 
@@ -133,7 +156,7 @@
         .seccion .cuerpo {
             border: 1px solid #cfd9e6;
             border-top: none;
-            padding: 5px 6px;
+            padding: 4px 6px;
         }
 
         .azul {
@@ -289,10 +312,112 @@
             color: #6b7a90;
             font-size: 7px;
             text-align: center;
+            line-height: 1.55;
         }
 
         .pie strong {
             color: #002060;
+        }
+
+        .pie .lema {
+            color: #f0600c;
+            font-weight: bold;
+        }
+
+        .pie .futuro {
+            color: #00ae9c;
+            font-weight: bold;
+        }
+
+        /* ---------- Actividades diarias ---------- */
+        .actividades {
+            margin-top: 2px;
+        }
+
+        .actividades td {
+            border-bottom: 1px dotted #e4eaf2;
+            font-size: 8px;
+            padding: 2px 3px;
+            vertical-align: middle;
+        }
+
+        .actividades td.check {
+            color: #006c60;
+            font-weight: bold;
+            width: 18px;
+            text-align: center;
+        }
+
+        .actividades td.minutos {
+            color: #004090;
+            font-size: 7.5px;
+            width: 46px;
+            text-align: right;
+        }
+
+        .actividades .hecha {
+            color: #002060;
+            font-weight: bold;
+        }
+
+        .actividades .pendiente {
+            color: #6b7a90;
+        }
+
+        /* ---------- Meta semanal y seguimiento personal ---------- */
+        .meta {
+            border: 1px solid #cfd9e6;
+            background-color: #fffaf5;
+            padding: 4px 6px;
+            font-size: 8.5px;
+        }
+
+        .meta .semana {
+            color: #f0600c;
+            font-size: 7px;
+            font-weight: bold;
+            letter-spacing: 0.4px;
+        }
+
+        .meta .porque {
+            color: #6b7a90;
+            font-size: 7.8px;
+        }
+
+        .seguimiento .campo {
+            font-size: 7px;
+            font-weight: bold;
+            color: #004090;
+            letter-spacing: 0.3px;
+            display: block;
+            margin-top: 3px;
+        }
+
+        .seguimiento .respuesta {
+            border: 1px solid #cfd9e6;
+            background-color: #f4f7fb;
+            padding: 2px 5px;
+            font-size: 8.2px;
+            min-height: 11px;
+        }
+
+        /* ---------- Reflexión de la semana ---------- */
+        .reflexion .par {
+            border-bottom: 1px dotted #e4eaf2;
+            padding: 2px 0;
+            font-size: 8.2px;
+        }
+
+        .reflexion .par:last-child {
+            border-bottom: none;
+        }
+
+        .reflexion .pregunta {
+            color: #004090;
+            font-size: 7px;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+            display: block;
         }
 
         /* Sólo cuando se pidió la marca de prueba */
@@ -313,8 +438,12 @@
 <table class="cabecera">
     <tr>
         <td class="marca">
-            <div class="t1">TRANSFORMA</div>
-            <div class="t2">Conecta</div>
+            @if ($logo)
+                <img src="{{ $logo }}" alt="Transforma-Conecta">
+            @else
+                <div class="t1">TRANSFORMA</div>
+                <div class="t2">Conecta</div>
+            @endif
         </td>
         <td>
             <div class="programa">PROGRAMA DE DESARROLLO PERSONAL "TRANSFORMA-CONECTA"</div>
@@ -324,7 +453,10 @@
     </tr>
 </table>
 
-<div class="banda">ORGÁNIZATE - ACTÚA - AVANZA</div>
+<div class="banda">
+    <div class="banda__titulo">MI RUTINA ME FORTALECE</div>
+    <div class="banda__lema">PEQUEÑAS ACCIONES, GRANDES CAMBIOS</div>
+</div>
 
 {{-- ======================== DATOS DEL DÍA ========================== --}}
 <table class="datos">
@@ -352,6 +484,30 @@
     <tr>
         {{-- ------------------------- IZQUIERDA ------------------------- --}}
         <td width="55%" valign="top" style="padding-right: 8px;">
+
+            {{-- Mi meta semanal --}}
+            @if ($metaSemanal)
+                <table class="seccion">
+                    <tr>
+                        <td class="titulo-seccion naranja">MI META SEMANAL</td>
+                    </tr>
+                    <tr>
+                        <td class="cuerpo">
+                            <div class="meta">
+                                <span class="semana">{{ mb_strtoupper($metaSemanal->etiqueta()) }}</span>
+                                <div>{{ $metaSemanal->goal }}</div>
+
+                                @if ($metaSemanal->why_important)
+                                    <div class="porque">
+                                        <strong>¿Por qué es importante para mí?</strong>
+                                        &nbsp;{{ $metaSemanal->why_important }}
+                                    </div>
+                                @endif
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            @endif
 
             {{-- Mis 3 objetivos --}}
             <table class="seccion">
@@ -416,10 +572,66 @@
                 </tr>
             </table>
 
+            {{-- Actividades diarias --}}
+            @if ($plan->activities->isNotEmpty())
+                <table class="seccion">
+                    <tr>
+                        <td class="titulo-seccion turquesa">ACTIVIDADES DIARIAS</td>
+                    </tr>
+                    <tr>
+                        <td class="cuerpo">
+                            <table class="actividades">
+                                @foreach ($plan->activities as $actividad)
+                                    <tr>
+                                        <td class="check">{{ $actividad->pivot->is_done ? '[X]' : '[ ]' }}</td>
+                                        <td class="{{ $actividad->pivot->is_done ? 'hecha' : 'pendiente' }}">
+                                            {{ $actividad->name }}
+                                        </td>
+                                        <td class="minutos">
+                                            {{ $actividad->pivot->minutes ? (int) $actividad->pivot->minutes.' min' : '' }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            @endif
+
+            {{-- Mi meta personal: el seguimiento del día --}}
+            @php
+                $seguimiento = [
+                    '¿Qué hice hoy para acercarme a mi meta?' => $plan->personal_done_today,
+                    '¿Qué me ayudó?' => $plan->personal_helped,
+                    '¿Qué me dificultó?' => $plan->personal_hard,
+                ];
+                $haySeguimiento = collect($seguimiento)
+                    ->contains(fn (mixed $valor) => ! \App\Helpers\Helper::isBlank($valor));
+            @endphp
+
+            @if ($haySeguimiento)
+                <table class="seccion">
+                    <tr>
+                        <td class="titulo-seccion naranja">
+                            MI META PERSONAL ·
+                            {{ mb_strtoupper(\App\Helpers\Helper::dayName($plan->plan_date, capitalize: true)) }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="cuerpo seguimiento">
+                            @foreach ($seguimiento as $pregunta => $respuesta)
+                                <span class="campo">{{ $pregunta }}</span>
+                                <div class="respuesta">{{ $respuesta ?: 'Sin registrar' }}</div>
+                            @endforeach
+                        </td>
+                    </tr>
+                </table>
+            @endif
+
             {{-- Notas --}}
             <table class="seccion">
                 <tr>
-                    <td class="titulo-seccion navy">NOTAS / RECORDATORIOS</td>
+                    <td class="titulo-seccion navy">NOTAS DEL DÍA</td>
                 </tr>
                 <tr>
                     <td class="cuerpo">
@@ -433,6 +645,31 @@
                     </td>
                 </tr>
             </table>
+
+            {{-- Reflexión de la semana: sólo el domingo, que es cuando se cierra --}}
+            @if ($plan->plan_date->isSunday() && $reflexionSemanal && $reflexionSemanal->tieneContenido())
+                <table class="seccion">
+                    <tr>
+                        <td class="titulo-seccion rojo">REFLEXIÓN DE LA SEMANA</td>
+                    </tr>
+                    <tr>
+                        <td class="cuerpo reflexion">
+                            <div class="meta">
+                                <span class="semana">{{ mb_strtoupper($reflexionSemanal->etiqueta()) }}</span>
+                            </div>
+
+                            @foreach ($reflexionSemanal->respuestas() as $fila)
+                                @if (! \App\Helpers\Helper::isBlank($fila['respuesta']))
+                                    <div class="par">
+                                        <span class="pregunta">{{ $fila['pregunta'] }}</span>
+                                        {{ $fila['respuesta'] }}
+                                    </div>
+                                @endif
+                            @endforeach
+                        </td>
+                    </tr>
+                </table>
+            @endif
 
         </td>
 
@@ -558,9 +795,10 @@
 
 {{-- ============================== PIE =============================== --}}
 <div class="pie">
-    <strong>MI PLANIFICADOR DIARIO</strong> · ORGÁNIZATE · ACTÚA · AVANZA<br>
-    Programa de Desarrollo Personal "Transforma-Conecta" ·
-    Generado el {{ \App\Helpers\Helper::dateTime(now()) }}
+    <strong>MI PLANIFICADOR DIARIO</strong><br>
+    <span class="lema">LO IMPORTANTE NO ES EL PENSAMIENTO, LO IMPORTANTE ES LA ACCIÓN</span><br>
+    <span class="futuro">¡TRANSFORMANDO NUESTRO FUTURO!</span><br>
+    Programa de Desarrollo Personal "Transforma-Conecta" · ©{{ now()->year }}
 </div>
 
 @if ($marca)

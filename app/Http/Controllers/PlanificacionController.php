@@ -202,64 +202,106 @@ class PlanificacionController extends Controller
     }
 
     /**
-     * Monta un libro en la cola.
+     * Monta uno o varios libros en la cola.
      *
-     * Sólo se guarda: el procesamiento es de la corrida de las 00:00. Si ya
-     * había un libro con el mismo nombre, se reemplaza y su estado vuelve a
-     * "en espera".
+     * Sólo se guarda: el procesamiento es de la corrida de las 00:00. Se pueden
+     * montar varios libros a la vez y todos tienen que ser .xlsx. Si ya había
+     * uno con el mismo nombre, se reemplaza y su estado vuelve a "en espera".
      */
     public function store(Request $request): JsonResponse|RedirectResponse
     {
         $datos = $request->validate([
-            'archivo' => ['required', 'file', 'mimes:xlsx', 'max:'.ArchivosDePlanificacion::PESO_MAXIMO],
+            'archivos' => ['required', 'array', 'min:1'],
+            'archivos.*' => ['required', 'file', 'mimes:xlsx', 'max:'.ArchivosDePlanificacion::PESO_MAXIMO],
         ], [
-            'archivo.required' => 'Elige el libro de Excel que vas a montar.',
-            'archivo.file' => 'El archivo no llegó bien: vuelve a intentarlo.',
-            'archivo.mimes' => 'El libro tiene que ser .xlsx (Excel).',
-            'archivo.max' => 'El libro no puede pesar más de '.Helper::fileSize(ArchivosDePlanificacion::PESO_MAXIMO * 1024).'.',
+            'archivos.required' => 'Elige al menos un libro de Excel (.xlsx) para montar.',
+            'archivos.array' => 'Los libros tienen que llegar como una lista de archivos.',
+            'archivos.min' => 'Elige al menos un libro de Excel (.xlsx) para montar.',
+            'archivos.*.required' => 'Alguno de los libros no llegó bien: vuelve a intentarlo.',
+            'archivos.*.file' => 'Alguno de los libros no llegó bien: vuelve a intentarlo.',
+            'archivos.*.mimes' => 'Todos los libros tienen que ser .xlsx (Excel).',
+            'archivos.*.max' => 'Ningún libro puede pesar más de '.Helper::fileSize(ArchivosDePlanificacion::PESO_MAXIMO * 1024).'.',
         ]);
 
         try {
-            $subido = $request->file('archivo');
-            $nombre = ArchivosDePlanificacion::guardarLibro($subido);
+            $montados = [];
+            $reemplazados = [];
+            $fallos = [];
 
-            // ¿Ya había un libro con este nombre? Se reemplaza (el archivo y su
-            // estado): vuelve a "en espera" y se borra el detalle de la corrida
-            // anterior, aunque hubiera quedado saltada alguna hoja.
-            $anterior = PlanificacionImportacion::where('archivo', $nombre)->first();
+            // Uno por uno: si un libro falla, los demás siguen y el aviso dice
+            // cuáles entraron y cuáles no.
+            foreach ($datos['archivos'] as $subido) {
+                try {
+                    $nombre = ArchivosDePlanificacion::guardarLibro($subido);
 
-            $registro = PlanificacionImportacion::updateOrCreate(
-                ['archivo' => $nombre],
-                [
-                    'nombre_original' => Helper::limit($subido->getClientOriginalName(), 120, ''),
-                    'estado' => PlanificacionImportacion::EN_ESPERA,
-                    'periodo_desde' => null,
-                    'periodo_hasta' => null,
-                    // Los contadores vuelven a cero junto con el detalle: el
-                    // libro arranca de nuevo, sin la observación anterior.
-                    'hojas_total' => 0,
-                    'hojas_creadas' => 0,
-                    'hojas_omitidas' => 0,
-                    'hojas_saltadas' => 0,
-                    'hojas_ignoradas' => 0,
-                    'hojas_error' => 0,
-                    'cubierto_hasta' => null,
-                    'en_bd_hasta' => null,
-                    'dias_sin_hoja' => 0,
-                    'procesado_en' => null,
-                    'descartado_en' => null,
-                    'subido_en' => Helper::now(),
-                    'mensaje' => 'Montado y en espera de la corrida de las '.ImportarPlanificacion::HORA.'.',
-                ]
-            );
+                    // ¿Ya había un libro con este nombre? Se reemplaza (el archivo
+                    // y su estado): vuelve a "en espera" y se borra el detalle de
+                    // la corrida anterior, aunque hubiera quedado saltada alguna
+                    // hoja.
+                    $anterior = PlanificacionImportacion::where('archivo', $nombre)->first();
 
-            $registro->hojas()->delete();
+                    $registro = PlanificacionImportacion::updateOrCreate(
+                        ['archivo' => $nombre],
+                        [
+                            'nombre_original' => Helper::limit($subido->getClientOriginalName(), 120, ''),
+                            'estado' => PlanificacionImportacion::EN_ESPERA,
+                            'periodo_desde' => null,
+                            'periodo_hasta' => null,
+                            // Los contadores vuelven a cero junto con el detalle: el
+                            // libro arranca de nuevo, sin la observación anterior.
+                            'hojas_total' => 0,
+                            'hojas_creadas' => 0,
+                            'hojas_omitidas' => 0,
+                            'hojas_saltadas' => 0,
+                            'hojas_ignoradas' => 0,
+                            'hojas_error' => 0,
+                            'cubierto_hasta' => null,
+                            'en_bd_hasta' => null,
+                            'dias_sin_hoja' => 0,
+                            'procesado_en' => null,
+                            'descartado_en' => null,
+                            'subido_en' => Helper::now(),
+                            'mensaje' => 'Montado y en espera de la corrida de las '.ImportarPlanificacion::HORA.'.',
+                        ]
+                    );
 
-            $mensaje = ($anterior
-                    ? 'El libro «'.$nombre.'» se volvió a montar: reemplazó al anterior y quedó en espera'
-                    : 'El libro «'.$nombre.'» quedó en la cola')
-                .'. Se procesa en la corrida de las '.ImportarPlanificacion::HORA
-                .'; hasta entonces no se toca la base de datos.';
+                    $registro->hojas()->delete();
+
+                    $montados[] = $nombre;
+
+                    if ($anterior) {
+                        $reemplazados[] = $nombre;
+                    }
+                } catch (Throwable $e) {
+                    $this->registrarFallo($e, 'montar un libro de planificación periódica', [
+                        'archivo' => $subido->getClientOriginalName(),
+                    ]);
+
+                    $fallos[] = $subido->getClientOriginalName();
+                }
+            }
+
+            // Dos archivos elegidos pueden terminar con el mismo nombre (el
+            // saneado los iguala): el último gana y en el aviso va una sola vez.
+            $montados = array_values(array_unique($montados));
+            $reemplazados = array_values(array_unique($reemplazados));
+            $fallos = array_values(array_unique($fallos));
+
+            if ($montados === []) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'No se pudo guardar ningún libro. Intenta de nuevo.',
+                        'errors' => $fallos,
+                    ], 500);
+                }
+
+                return redirect()
+                    ->route('planificacion.index')
+                    ->with('error', 'No se pudo guardar ningún libro. Intenta de nuevo.');
+            }
+
+            $mensaje = $this->mensajeDeMontaje($montados, $reemplazados, $fallos);
 
             // El módulo lo manda por AJAX: contesta con el sobre de siempre y el
             // navegador refresca sólo la cola. Sin JavaScript, el formulario
@@ -268,7 +310,7 @@ class PlanificacionController extends Controller
                 return response()->json([
                     'ok' => true,
                     'message' => $mensaje,
-                    'data' => ['archivo' => $nombre],
+                    'data' => ['archivos' => $montados, 'fallos' => $fallos],
                 ], 201);
             }
 
@@ -276,21 +318,24 @@ class PlanificacionController extends Controller
                 ->route('planificacion.index')
                 ->with('exito', $mensaje);
         } catch (Throwable $e) {
-            $this->registrarFallo($e, 'montar un libro de planificación periódica', [
-                'archivo' => $request->file('archivo')?->getClientOriginalName(),
+            $this->registrarFallo($e, 'montar libros de planificación periódica', [
+                'archivos' => array_map(
+                    fn ($archivo) => $archivo->getClientOriginalName(),
+                    $datos['archivos']
+                ),
             ]);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'No se pudo guardar el libro. Intenta de nuevo.',
+                    'message' => 'No se pudieron guardar los libros. Intenta de nuevo.',
                     'errors' => [],
                 ], 500);
             }
 
             return redirect()
                 ->route('planificacion.index')
-                ->with('error', 'No se pudo guardar el libro. Intenta de nuevo.');
+                ->with('error', 'No se pudieron guardar los libros. Intenta de nuevo.');
         }
     }
 
@@ -620,6 +665,41 @@ class PlanificacionController extends Controller
     /* ======================================================================
      |  Internos
      ====================================================================== */
+
+    /**
+     * El aviso de lo que pasó al montar: cuántos libros entraron, si alguno
+     * reemplazó a otro y cuáles no se pudieron guardar.
+     *
+     * @param  list<string>  $montados
+     * @param  list<string>  $reemplazados
+     * @param  list<string>  $fallos
+     */
+    private function mensajeDeMontaje(array $montados, array $reemplazados, array $fallos): string
+    {
+        if (count($montados) === 1) {
+            $mensaje = $reemplazados === []
+                ? 'El libro «'.$montados[0].'» quedó en la cola'
+                : 'El libro «'.$montados[0].'» se volvió a montar: reemplazó al anterior y quedó en espera';
+        } else {
+            $mensaje = count($montados).' libros quedaron en la cola: '.Helper::listToText($montados);
+
+            if ($reemplazados !== []) {
+                $mensaje .= ' (se volvieron a montar: '.Helper::listToText($reemplazados).')';
+            }
+        }
+
+        $mensaje .= count($montados) === 1
+            ? '. Se procesa en la corrida de las '.ImportarPlanificacion::HORA
+            : '. Se procesan en la corrida de las '.ImportarPlanificacion::HORA;
+
+        $mensaje .= '; hasta entonces no se toca la base de datos.';
+
+        if ($fallos !== []) {
+            $mensaje .= ' No se pudieron montar: '.Helper::listToText($fallos).'.';
+        }
+
+        return $mensaje;
+    }
 
     /**
      * Los libros que se muestran en el módulo: los que están en la cola y los

@@ -29,7 +29,12 @@ Al comenzar el día, y mientras el día transcurre, el sistema revisa el diario 
 2. Si una franja del horario ya pasó su hora (más un margen de gracia) y sigue sin marcarse,
    genera un recordatorio para realizar esa tarea. Las franjas futuras y las ya marcadas no se
    notifican.
-3. Si el día transcurre y no hay diario cargado, avisa que falta crearlo (se puede apagar).
+3. Si una **actividad diaria** (tender la cama, caminata, respiración, meditación, audios, temas
+   del día en WhatsApp, alimentación, estudio/trabajo, actividad física, tareas del hogar, práctica
+   de habilidades, tiempo personal o la meta semanal) ya pasó su hora y sigue sin marcarse, pregunta
+   si se realizó: «¿Has realizado la meditación?», «¿Has ejercido tus estudios o labores?». Las que
+   ya están marcadas no se notifican, y las del sábado tampoco se avisan fuera del sábado.
+4. Si el día transcurre y no hay diario cargado, avisa que falta crearlo (se puede apagar).
 
 El recordatorio llega a la campanita en tiempo real, suena, se puede abrir en un modal y, al
 cerrarlo, queda marcado como leído. El estado se replica al espejo de Firestore para que el push
@@ -116,7 +121,17 @@ La colección se llama `notificaciones` y el id de cada documento es el `uuid` d
 - Las franjas futuras, las marcadas y las que no tienen actividad no se notifican.
 - La prioridad sube a `alta` si la franja lleva dos horas o más sin marcarse.
 
-### Regla 3 · Día sin diario
+### Regla 3 · Actividades diarias
+
+- Se revisan las actividades del diario de hoy que aplican al día (el catálogo `daily_activities`
+  guarda la hora y la pregunta de cada una).
+- Si la hora de la actividad ya pasó y su pivote `is_done = false`, se genera un aviso con la clave
+  `actividad:{plan}:{actividad}:{fecha}`.
+- Las actividades ya marcadas no se notifican. Las del sábado (cambio de sábanas, toallas y
+  espacio ordenado) sólo aplican ese día.
+- Se puede apagar con `NOTIFICACIONES_AVISAR_ACTIVIDADES=false`.
+
+### Regla 4 · Día sin diario
 
 - Si no hay `DailyPlan` para hoy y ya pasó `hora_diario_ausente` (por defecto 08:00), se genera un
   único aviso con la clave `diario-ausente:{fecha}`.
@@ -128,10 +143,10 @@ La columna `clave` es única. La primera vez que una regla se cumple se crea el 
 siguientes evaluaciones del mismo día encuentran la clave y no crean otra fila. Si el aviso se
 archiva, la fila queda con `descartada_en` y la clave sigue reservada: no reaparece.
 
-**Los avisos se resuelven solos.** Si un objetivo o una franja se marca después de haber sido
-recordado, la siguiente sincronización lo marca como leído (deja de contar en la campanita). Lo
-mismo pasa con el aviso de diario ausente en cuanto el diario del día existe. El aviso queda en el
-historial como leído; no se archiva solo.
+**Los avisos se resuelven solos.** Si un objetivo, una franja o una actividad se marca después de
+haber sido recordado, la siguiente sincronización lo marca como leído (deja de contar en la
+campanita). Lo mismo pasa con el aviso de diario ausente en cuanto el diario del día existe. El aviso
+queda en el historial como leído; no se archiva solo.
 
 Las fechas se calculan en la zona de la aplicación (`APP_TIMEZONE`, por defecto
 `America/Caracas`).
@@ -197,8 +212,11 @@ Los `{uuid}` están restringidos con `Route::whereUuid()`.
 | --- | --- | --- |
 | `NOTIFICACIONES_HABILITADAS` | `true` | Interruptor general |
 | `NOTIFICACIONES_MARGEN_MINUTOS` | `10` | Gracia antes de recordar una franja |
-| `NOTIFICACIONES_AVISAR_DIARIO_AUSENTE` | `true` | Regla 3 |
+| `NOTIFICACIONES_AVISAR_DIARIO_AUSENTE` | `true` | Regla 4 |
 | `NOTIFICACIONES_HORA_DIARIO_AUSENTE` | `08:00` | Desde qué hora se avisa que falta el diario |
+| `NOTIFICACIONES_AVISAR_ACTIVIDADES` | `true` | Regla 3: recordar actividades diarias |
+| `NOTIFICACIONES_MARGEN_ACTIVIDADES` | `0` | Minutos de gracia antes de recordar una actividad |
+| `NOTIFICACIONES_HORA_ACTIVIDADES` | `18:00` | Hora de reserva si una actividad no trae la suya |
 | `NOTIFICACIONES_SEGUNDOS_ENTRE_GENERACIONES` | `55` | Frecuencia mínima de evaluación desde el navegador |
 | `NOTIFICACIONES_INTERVALO_MS` | `15000` | Sondeo de la campanita |
 | `NOTIFICACIONES_SONIDO` | `true` | Sonido inicial (luego manda la preferencia guardada) |

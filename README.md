@@ -191,43 +191,61 @@ principales.
 ### 4.2 Formulario del diario
 
 **Qué hace.** Un solo formulario para tres modos: **crear**, **ver** (solo lectura) y
-**modificar**. Reproduce las ocho secciones de la hoja.
+**modificar**. Reproduce la hoja "Mi rutina me fortalece": meta semanal, tres objetivos, horario,
+actividades diarias, meta personal, notas y la reflexión del domingo.
 
 **Archivos.**
 
 | Archivo | Rol |
 | --- | --- |
-| `DailyController` | Formulario en blanco (`/diario`) y con la fecha de hoy bloqueada (`/diario/today`) |
-| `DailyPlanController` | Crear, ver, modificar y eliminar el día |
-| `Concerns/DatosDelFormulario` | Catálogos activos y datos comunes de la vista (incluye los tramos del gráfico) |
+| `DailyController` | Formulario en blanco (`/diario`), con la fecha de hoy (`/diario/today`) y la meta de una semana (`/diario/meta-semanal`) |
+| `DailyPlanController` | Crear, ver, modificar y eliminar el día; guardar horario y actividades desde la vista de solo lectura |
+| `Concerns/DatosDelFormulario` | Catálogos activos y datos comunes de la vista (actividades, meta semanal, reflexión, tramos del gráfico) |
 | `resources/views/diario/formulario.blade.php` | La vista de los tres modos |
-| `public/js/script.js` | Fecha y día, filas del horario, casillas, validación, guardado y cumplimiento por AJAX |
+| `public/js/script.js` | Fecha y día, secciones que dependen del día, meta semanal, filas del horario, actividades, casillas, validación, guardado y cumplimiento por AJAX |
 
 **Cómo funciona.**
 
 1. Los catálogos se cargan con `scopeActive()`. El modo cambia el método HTTP, la acción del
    formulario, si la fecha está bloqueada y si los campos son editables (`readonly` para textos,
    `disabled` para casillas y radios).
-2. **Mis 3 objetivos**: tres ranuras fijas; cada una lleva su `slot` y su `goal_type_id` en
+2. **Mi meta semanal** (encima de los objetivos): meta y por qué es importante. Es obligatoria y se
+   registra **una sola vez por semana**, de lunes a domingo (el lunes es la identidad). Al elegir la
+   fecha, el formulario consulta `GET /diario/meta-semanal` y trae la meta de esa semana si ya
+   existe; los días siguientes la muestran **bloqueada** y no la vuelven a registrar. Sólo el botón
+   **Cambiar meta de la semana** la desbloquea y autoriza el cambio (`weekly_goal[actualizar]`). Al
+   empezar una semana nueva no hay meta para ese lunes, así que se pide y se registra una nueva.
+3. **Mis 3 objetivos**: tres ranuras fijas; cada una lleva su `slot` y su `goal_type_id` en
    campos ocultos, la descripción y la casilla *Cumplido*.
-3. **Antes de empezar**: los ítems del catálogo; al marcar un ítem se habilita su descripción
+4. **Antes de empezar**: los ítems del catálogo; al marcar un ítem se habilita su descripción
    libre ("PC, cuaderno, calculadora").
-4. **Mi horario de hoy**: tabla dinámica (agregar y quitar franjas) con hora libre por fila,
+5. **Mi horario de hoy**: tabla dinámica (agregar y quitar franjas) con hora libre por fila,
    actividad y casilla de cumplida, más un "marcar todas". Cada cambio redibuja el gráfico. En la
    vista **ver** las casillas de las franjas siguen activas y al final de la sección aparece
    **Guardar cumplimiento**: confirma con bootbox y guarda por AJAX (`PATCH diario.horario`), sin
    abrir el formulario completo.
-5. **Bloque de acción**: duración del catálogo, resultado esperado y tarea. El formulario siempre
-   envía `action_blocks[0]`; si viene vacío, **no se crea una fila fantasma**.
-6. **Cierre del día** y **Notas**: los cuatro campos del cierre y un textarea de notas (cada
-   línea no vacía se guarda como una nota con su orden).
-7. Al guardar: confirmación con bootbox → AJAX con el testigo CSRF → validación en el servidor →
-   alerta de éxito → redirección (al inicio si era nuevo, al listado si era una modificación).
+6. **Actividades diarias**: el catálogo de hábitos (tender la cama, caminata, respiración,
+   meditación, audios, temas del día en WhatsApp, alimentación, estudio/trabajo, actividad física,
+   tareas del hogar, práctica de habilidades, tiempo personal y meta semanal). Caminata, respiración
+   y meditación piden minutos. Las tres del sábado (sábanas, toallas y espacio ordenado) solo se
+   muestran ese día. En la vista **ver** también se pueden marcar y guardar con
+   `PATCH diario.actividades`.
+7. **Mi meta personal**: el seguimiento del día, con el símbolo del día actual, "¿Qué hice hoy para
+   acercarme a mi meta?", "¿Qué me ayudó?" y "¿Qué me dificultó?".
+8. **Notas del día**: un textarea (cada línea no vacía se guarda como una nota con su orden).
+9. **Reflexión de la semana**: solo aparece el domingo y guarda las seis preguntas del cierre en
+   `weekly_reflections`, por semana.
+10. **Bloque de acción** y **cierre del día**: duración del catálogo, resultado esperado, tarea y
+    los cuatro campos del cierre. El formulario siempre envía `action_blocks[0]`; si viene vacío,
+    **no se crea una fila fantasma**.
+11. Al guardar: confirmación con bootbox → AJAX con el testigo CSRF → validación en el servidor →
+    alerta de éxito → redirección (al inicio si era nuevo, al listado si era una modificación).
 
 **Reglas de guardado.** `DailyPlan::createDay()` / `updateDay()` corren en una transacción:
-crean la cabecera, generan la estructura hija que falte (`refreshDayStructure()`, idempotente) y
-sincronizan cada sección (`applyDayData()`). Si algo falla, se deshace todo y el fallo queda en
-la bitácora ([§4.10](#410-página-de-errores-y-bitácora)).
+crean la cabecera, generan la estructura hija que falte (`refreshDayStructure()`, idempotente,
+incluye las actividades del día) y sincronizan cada sección (`applyDayData()`). Si algo falla, se
+deshace todo y el fallo queda en la bitácora ([§4.10](#410-página-de-errores-y-bitácora)). El
+detalle de las tablas nuevas está en [`docs/nuevas-secciones.md`](docs/nuevas-secciones.md).
 
 ### 4.3 Listado, búsqueda y filtros
 
@@ -331,9 +349,11 @@ vacío.
 
 ### 4.7 Resumen de desempeño en PDF
 
-**Qué hace.** Genera un PDF con los números del período, lecturas redactadas, tabla día por día
-y tres gráficos (rendimiento contra procrastinación, por día de la semana y por energía). Con un
-solo día incluye además la línea de tiempo.
+**Qué hace.** Genera un PDF con los números del período, la lectura redactada, el **dictamen
+clínico y ético**, las **recomendaciones**, la tabla día por día (con actividades), las metas
+semanales y las reflexiones del domingo, además de los gráficos: rendimiento contra
+procrastinación, rendimiento por día, por energía, cumplimiento de las actividades diarias y el
+impacto de las actividades que se cumplieron. Con un solo día incluye también la línea de tiempo.
 
 **Archivos.** `DailyPlanController@resumen` (+ `agendaDelResumen()`),
 `resources/views/diario/resumen.blade.php`, `App\Reportes\AnalisisDeDesempeno`,
@@ -341,8 +361,10 @@ solo día incluye además la línea de tiempo.
 
 **Cómo funciona.** Los mismos filtros del listado alimentan el análisis; el resumen declara su
 alcance ("el período del 1 al 30 de septiembre de 2026") y explica con texto lo que no puede
-afirmar. Los gráficos se dibujan con GD y viajan como imágenes embebidas. El detalle de las
-fórmulas está en [§8](#8-motor-de-análisis-del-desempeño).
+afirmar. Los cruces informan el tamaño de la muestra (`n`), la correlación entre señales y
+rendimiento y la comparación de los días con y sin cada actividad. Los gráficos se dibujan con GD
+y viajan como imágenes embebidas. El detalle de las fórmulas está en
+[§8](#8-motor-de-análisis-del-desempeño).
 
 ### 4.8 Planificación periódica
 
@@ -380,15 +402,37 @@ En cada hoja de día cada dato tiene su etiqueta en la columna B y su valor en l
 la D). El lector busca **por etiqueta, no por número de fila**, así que insertar una fila no rompe
 la importación.
 
+**Las secciones nuevas también viajan por la planilla.** Cada hoja de día trae, además de las
+secciones de siempre:
+
+- **MI META SEMANAL**: la meta y su porqué. Es la misma para toda la semana; si se deja vacía, el
+  sistema usa la meta que ya exista para esa semana. La escriba el día que la escriba, todos los
+  días de la semana quedan vinculados a ella.
+- **ACTIVIDADES DIARIAS**: los hábitos del catálogo, con su Sí/No y sus minutos (caminata,
+  respiración y meditación). Incluye **Temas del día en WhatsApp** entre los audios y la
+  alimentación. Las tres del sábado (sábanas, toallas y espacio ordenado) solo se tienen en cuenta
+  en la hoja del sábado.
+- **MI META PERSONAL**: el seguimiento del día (qué hice, qué me ayudó y qué me dificultó).
+- **REFLEXIÓN DE LA SEMANA**: las seis preguntas del cierre. Solo se guardan en la hoja del domingo;
+  en los demás días se ignoran y queda el aviso en el reporte de la corrida.
+
+La corrida lee estas secciones y las escribe en las mismas tablas que el formulario
+(`weekly_goals`, `daily_plan_activity`, `weekly_reflections` y las columnas nuevas de
+`daily_plans`). La primera meta semanal que aparezca en el libro es la que queda para esa semana:
+las demás hojas no la vuelven a registrar ni la pisan. Si una hoja viene de una planilla anterior y
+no trae estas secciones, se importa igual: las actividades se generan vacías y la meta se hereda si
+esa semana ya la tenía.
+
 **Celdas preparadas: lo que se elige, no se escribe.** La hoja va protegida (sin contraseña) para
 que las etiquetas no se muevan, y las celdas de valor quedan escribibles con sus listas puestas:
 
 | Celda | Qué trae |
 | --- | --- |
 | Energía | Lista cerrada: Baja, Media, Alta |
-| Todos los Sí/No | Lista cerrada: Sí, No (objetivos, franjas del horario, checklist y preguntas) |
+| Todos los Sí/No | Lista cerrada: Sí, No (objetivos, franjas del horario, checklist, preguntas y actividades diarias) |
 | Hora de cada franja | Lista con **todas las horas del día, minuto a minuto: de 00:00 (12:00 a. m.) a 23:59 (11:59 p. m.)**, 1440 opciones, así cada actividad se planifica a la hora y al minuto que sea. Admite otra hora escrita a mano —avisa, pero la acepta—, por ejemplo 07:30. La lista vive en la hoja oculta `LISTAS` (`LISTAS!$B$1:$B$1440`) porque no entra en la fórmula |
 | Duración y resultado del bloque | Listas con los valores del catálogo |
+| Actividades diarias | Sí/No en la columna C y los **minutos** en la D (solo para caminata, respiración y meditación) |
 | Horario | **20 franjas listas** (las 15 del catálogo y 5 de más), cada una con la lista de horas y el Sí/No. Si se inserta una fila dentro del bloque, Excel le arrastra las mismas listas |
 | Fecha (planilla del período) | Lista desplegable con **los días del período**, y la fecha de esa hoja ya puesta |
 | Fecha (planilla genérica) | Celda preparada para escribir una fecha (`dd/mm/aaaa`): **Excel no tiene calendario desplegable en un archivo `.xlsx` normal** (eso existe en Google Sheets, o en Excel solo con macros, en un `.xlsm`). Como el nombre de la hoja es el que manda, esta celda puede quedar vacía |
@@ -410,14 +454,14 @@ explícitamente: sin eso, las celdas quedan con la lista pero **sin la flecha**,
 parecen campos comunes. Está cubierto por una prueba.
 
 **El módulo** (`/planificacion`) ofrece: descargar cualquiera de las planillas (la genérica en
-`/planificacion/plantilla` y las de período por su nombre), **montar un libro sin recargar la
-página**, ver la cola con el estado y el resultado de cada uno, **eliminar de la cola uno o varios
-libros a la vez** (se seleccionan con casillas, se confirma con bootbox y se van a `descartados/`),
-ver el detalle de la última corrida (hoja por hoja, con el motivo de cada salto, **en vivo** mientras
-la corrida trabaja) y **quitar un libro de la cola** desde su fila. El módulo **solo guarda**: no
-procesa nada.
+`/planificacion/plantilla` y las de período por su nombre), **montar uno o varios libros a la vez sin
+recargar la página**, ver la cola con el estado y el resultado de cada uno, **eliminar de la cola uno o
+varios libros a la vez** (se seleccionan con casillas, se confirma con bootbox y se van a
+`descartados/`), ver el detalle de la última corrida (hoja por hoja, con el motivo de cada salto, **en
+vivo** mientras la corrida trabaja) y **quitar un libro de la cola** desde su fila. El módulo **solo
+guarda**: no procesa nada.
 
-**Todo el módulo trabaja por AJAX.** Montar el libro, quitarlo de la cola (de a uno o en lote) y
+**Todo el módulo trabaja por AJAX.** Montar los libros, quitarlos de la cola (de a uno o en lote) y
 refrescar la lista no recargan la página: el formulario viaja con `FormData`, el servidor contesta
 con el sobre de siempre y los dos bloques que cambian con el tiempo —la cola y el detalle de la
 última corrida— se vuelven a pedir a `GET /planificacion/estado`, que devuelve el mismo HTML que se
@@ -431,6 +475,14 @@ anterior en la cola y su estado vuelve a **en espera**: se borra el detalle de l
 —incluida cualquier hoja saltada o con avisos— y los contadores arrancan de cero. Es la forma de
 corregir un libro que quedó a medias: se arregla el Excel, se monta otra vez y la corrida siguiente
 lo toma entero (los días que ya estén en la base se omiten como siempre).
+
+**El campo del Paso 2 es múltiple.** Se eligen todos los libros que se quieran montar y viajan en un
+solo envío (`archivos[]`); el servidor los guarda uno por uno y el aviso dice cuántos entraron y, si
+alguno no se pudo guardar en el disco, cuáles quedaron afuera. La validación es de la lista completa:
+**todos tienen que ser `.xlsx`** (y respetar el peso máximo por libro), así que si uno no sirve **no
+se monta ninguno** y no queda media cola cargada. El campo también revisa la extensión en el
+navegador antes de enviar y muestra debajo el resumen de lo elegido, porque el selector nativo sólo
+dice "N archivos".
 
 **El estado se mantiene al día solo.** Cada 3 segundos el módulo vuelve a pedir el estado de los dos
 bloques (y también al volver a la pestaña) y **sólo cambia la pantalla si algo cambió**: el servidor
@@ -640,14 +692,16 @@ cruzarlos. Si el log no se puede escribir, el sistema sigue respondiendo.
 ### 4.12 Notificaciones en pantalla
 
 **Qué hace.** Recuerda el diario de hoy: los objetivos principales sin marcar, las franjas cuya
-hora ya pasó sin cumplirse y el aviso de que el día no tiene diario cargado. La campanita vive en
-la cabecera, después de la fecha y la hora; el buzón se despliega de derecha a izquierda como el
-menú del sistema y cada aviso se abre en un modal de Bootstrap. Al cerrarlo queda leído. La
-pantalla es **un solo buzón**: MySQL guarda el historial y Firestore mantiene el espejo interno
-para el push, sin pestañas ni bandejas separadas.
+hora ya pasó sin cumplirse, las **actividades diarias** que ya pasaron su hora sin marcarse
+(«¿Has realizado la meditación?», «¿Has ejercido tus estudios o labores?») y el aviso de que el
+día no tiene diario cargado. La campanita vive en la cabecera, después de la fecha y la hora; el
+buzón se despliega de derecha a izquierda como el menú del sistema y cada aviso se abre en un modal
+de Bootstrap. Al cerrarlo queda leído. La pantalla es **un solo buzón**: MySQL guarda el historial
+y Firestore mantiene el espejo interno para el push, sin pestañas ni bandejas separadas.
 
 - **Reglas**: `app/Notificaciones/GeneradorDeNotificaciones.php`.
-- **SQL**: `Notificacion`, migración `create_notificaciones_table`, `BuzonMysql`,
+- **SQL**: `Notificacion`, migración `create_notificaciones_table` (más
+  `add_daily_activity_to_notificaciones_table` para la referencia de la actividad), `BuzonMysql`,
   `NotificacionController` y `index.blade.php`.
 - **NoSQL interno**: `NotificacionFirestore`, `BuzonFirestore` y el cliente REST
   `ClienteFirestore`; no tiene controlador ni vista propios porque no se muestra aparte.
@@ -685,7 +739,7 @@ detalladas en [docs/notificaciones.md](docs/notificaciones.md#5-rutas-y-respuest
 | DELETE | `/diario/{dailyPlan}` | `diario.destroy` | `DailyPlanController@destroy` | **JSON** con el resultado |
 | GET | `/planificacion` | `planificacion.index` | `PlanificacionController@index` | Módulo de planificación periódica |
 | GET | `/planificacion/plantilla/{archivo?}` | `planificacion.plantilla` | `PlanificacionController@plantilla` | **XLSX** de la planilla (genérica o de un período) |
-| POST | `/planificacion` | `planificacion.store` | `PlanificacionController@store` | Monta un libro en la cola (**JSON 201** si la petición espera JSON; si no, redirige con el aviso) |
+| POST | `/planificacion` | `planificacion.store` | `PlanificacionController@store` | Monta uno o varios libros en la cola (`archivos[]`, todos `.xlsx`) (**JSON 201** si la petición espera JSON; si no, redirige con el aviso) |
 | POST | `/planificacion/corrida` | `planificacion.corrida.ejecutar` | `PlanificacionController@ejecutarCorrida` | **JSON 202**: arranca la corrida a mano en segundo plano (422 si la cola está vacía, 409 si ya hay una en curso) |
 | GET | `/planificacion/corrida` | `planificacion.corrida` | `PlanificacionController@corrida` | **JSON** con cómo va la corrida (estado, porcentaje, paso, resumen y observaciones) |
 | GET | `/planificacion/estado` | `planificacion.estado` | `PlanificacionController@estado` | **JSON** con la cola y el detalle de la última corrida (HTML y huella de cada uno), para refrescarlos sin recargar. **No dispara la corrida** |
@@ -777,6 +831,7 @@ Llenar cada hoja (energía, 3 objetivos, horario, cierre… la hoja de INSTRUCCI
         │
         ▼
 Montarla en /planificacion  ──►  queda «en espera» (no se procesa nada todavía)
+                                 (puede ir más de un libro en el mismo envío)
         │
         ▼
 00:00  ──►  planificacion:importar
@@ -905,8 +960,9 @@ persona marcó; no infiere nada.
 
 | Componente | Peso | Se mide con |
 | --- | --- | --- |
-| Horario | 60 | Franjas cumplidas sobre franjas totales |
-| Objetivos | 30 | Objetivos cumplidos sobre objetivos totales |
+| Horario | 45 | Franjas cumplidas sobre franjas totales |
+| Objetivos | 25 | Objetivos cumplidos sobre objetivos totales |
+| Actividades diarias | 20 | Actividades marcadas sobre actividades disponibles del día |
 | Preparativos | 10 | Ítems marcados sobre ítems del checklist |
 
 Para cada componente **con datos** se acumula `peso × (logrado / total)`; al final se divide por
@@ -915,19 +971,27 @@ entre los demás: un diario sin checklist no queda castigado por algo que no car
 
 ### 8.2 Totales del período (`global`)
 
-Rendimiento promedio, mejor y peor; totales y porcentajes de horario, objetivos y preparativos;
-total de señales de procrastinación y promedio por día; y cuántos días tienen el cierre escrito.
+Rendimiento promedio, mejor y peor; totales y porcentajes de horario, objetivos, actividades
+diarias y preparativos; minutos de actividad y promedio por día; total de señales de
+procrastinación y promedio por día; y cuántos días tienen el cierre, la meta semanal y la
+reflexión escritos.
 
 ### 8.3 Cruces
 
 | Cruce | Cómo se agrupa |
 | --- | --- |
-| `porEnergia` | Por nivel de energía: días, rendimiento promedio, % del horario y señales promedio |
-| `porDiaSemana` | Por día de la semana: días y rendimiento promedio |
-| `actividades` | Por nombre de actividad **normalizado**: total, hechas y porcentaje. Es lo que revela "lo que siempre se hace" y "lo que siempre se posterga" |
+| `porEnergia` | Por nivel de energía: días, rendimiento promedio, % del horario, % de actividades y señales promedio |
+| `porDiaSemana` | Por día de la semana: días, rendimiento promedio y % de actividades |
+| `actividades` | Por nombre de la actividad **del horario**, normalizado: total, hechas y porcentaje |
 | `franjas` | Por franja del día: Madrugada (0-5), Mañana (6-11), Tarde (12-17), Noche (18-23) |
 | `objetivos` | Por tipo de objetivo: total, cumplidos, porcentaje y hasta 6 pendientes por tipo |
 | `procrastinacion` | Por pregunta: respuestas y señales; y días con y sin señales |
+| `actividadesDiarias` | Por actividad del catálogo: días disponibles, cumplidas, porcentaje y minutos promedio |
+| `impactoActividades` | Para cada actividad: rendimiento de los días en que se hizo frente a los días en que no, con la diferencia en puntos y el tamaño de cada grupo |
+| `metasSemanales` | Por semana: meta, porqué, días, seguimiento personal y objetivos alcanzados |
+| `reflexionesSemanales` | Por semana: respuestas escritas de la reflexión del domingo |
+| `procrastinacionVsActividades` | Días con señales frente a días sin señales: rendimiento, actividades, horario y objetivos |
+| `correlacion` | Correlación de Pearson entre la cantidad de señales y el rendimiento, con `n` y una lectura cualitativa prudente |
 
 ### 8.4 Punto crítico de procrastinación
 
@@ -942,12 +1006,16 @@ total de señales de procrastinación y promedio por día; y cuántos días tien
 
 ### 8.5 Redacción y avisos
 
-`RedaccionDelResumen` convierte los números en siete secciones: desempeño del período, aspectos
-que se sostuvieron, aspectos a mejorar, metas alcanzadas, relación con la energía,
-procrastinación y rendimiento, y evolución en el período. Cuando una sección no tiene material,
-en lugar de quedar vacía escribe una frase que explica por qué: ese es el tono del sistema. Los
-avisos de contexto (sin señales registradas, días sin franjas, días sin cierre) se agregan sin
-calificar el análisis.
+`RedaccionDelResumen` convierte los números en diez secciones: desempeño del período, actividades
+diarias y hábitos, aspectos que se sostuvieron, aspectos a mejorar, metas alcanzadas, relación con
+la energía, procrastinación y rendimiento, **dictamen clínico y ético**, **recomendaciones** y
+evolución en el período. Cuando una sección no tiene material, en lugar de quedar vacía escribe
+una frase que explica por qué: ese es el tono del sistema. El dictamen distingue asociación de
+causa, explicita los límites de los datos (no diagnostica, no mide salud mental, depende de lo
+registrado) y deja el marco ético del documento. Las recomendaciones se apoyan en los datos del
+período y se presentan como sugerencias, no como indicaciones clínicas. Los avisos de contexto
+(sin señales registradas, días sin franjas, sin actividades, sin meta semanal, sin reflexión,
+días sin cierre) se agregan sin calificar el análisis.
 
 ---
 
@@ -1011,6 +1079,10 @@ Un registro por día planificado: cabecera + cierre del día.
 | `id` | bigint PK | |
 | `plan_date` | date, **único** | Un solo diario por fecha. El nombre del día no se guarda: se deduce |
 | `energy_level_id` | FK `energy_levels`, nullable | `nullOnDelete` |
+| `weekly_goal_id` | FK `weekly_goals`, nullable | Meta de la semana a la que pertenece el día. Un diario viejo puede no tenerla: se busca por fecha |
+| `personal_done_today` | text, nullable | Seguimiento: "¿Qué hice hoy para acercarme a mi meta?" |
+| `personal_helped` | text, nullable | Seguimiento: "¿Qué me ayudó?" |
+| `personal_hard` | text, nullable | Seguimiento: "¿Qué me dificultó?" |
 | `achievements` | text, nullable | "Lo que logré hoy" |
 | `pending` | text, nullable | "Lo que quedó pendiente" |
 | `pending_when` | text, nullable | "¿Cuándo lo haré?" |
@@ -1027,6 +1099,14 @@ Un registro por día planificado: cabecera + cierre del día.
 | `plan_notes` | `id`, `daily_plan_id` (cascade), `content` text, `sort_order` tinyint | Ordenadas por `sort_order` |
 | `reflection_answers` | `id`, `daily_plan_id` (cascade), `reflection_question_id` (cascade), `is_checked` bool, `answer` text nullable | `unique(daily_plan_id, reflection_question_id)` |
 | `daily_plan_preparation` | `id`, `daily_plan_id` (cascade), `preparation_item_id` (cascade), `is_checked` bool, `preparation_items_description` text nullable, timestamps | Pivote N:M con `unique(daily_plan_id, preparation_item_id)` |
+| `daily_plan_activity` | `id`, `daily_plan_id` (cascade), `daily_activity_id` (cascade), `is_done` bool, `minutes` smallint nullable, `note` varchar(500) nullable, timestamps | Pivote N:M con `unique(daily_plan_id, daily_activity_id)`. Los minutos solo se guardan si la actividad los pide |
+
+#### Metas y reflexiones semanales
+
+| Tabla | Columnas | Reglas |
+| --- | --- | --- |
+| `weekly_goals` | `id`, `week_start` (date, **único**), `goal` text, `why_important` text nullable, timestamps | Una meta por semana, identificada por su lunes. La comparten todos los diarios de esa semana |
+| `weekly_reflections` | `id`, `week_start` (date, **único**), `how_was_week`, `what_achieved`, `what_was_hard`, `what_learned`, `how_improved`, `what_different` (text, nullable), timestamps | Las seis preguntas del domingo, una fila por semana |
 
 ### 9.3 Catálogos
 
@@ -1039,6 +1119,7 @@ Un registro por día planificado: cabecera + cierre del día.
 | `action_block_durations` | `id`, `minutes` (uq), `label`, `sort_order`, `is_active` | 5, 10, 15 y 20 minutos |
 | `action_block_outcomes` | `id`, `slug` (uq), `name`, `sort_order`, `is_active` | Lo terminé · Avancé · Necesito otro bloque · Necesito pedir orientación |
 | `reflection_questions` | `id`, `category` (index), `question` text, `input_type`, `sort_order`, `is_active` | 5 preguntas de la categoría `procrastinacion`: ¿Qué estoy evitando? · ¿Por qué lo estoy postergando? · ¿Qué me está distrayendo? · ¿Necesito desglosarlo en pasos más pequeños? · ¿Qué puedo hacer AHORA en 5 minutos? |
+| `daily_activities` | `id`, `clave` (uq), `name`, `icon`, `requires_minutes` bool, `minutes_label`, `weekday` tinyint nullable, `reminder_time`, `reminder_question`, `category`, `sort_order`, `is_active` | 13 actividades de todos los días + 3 del sábado (sábanas, toallas, espacio ordenado). Caminata, respiración y meditación piden minutos; cada una trae su hora y su pregunta de recordatorio |
 
 ### 9.4 Tablas de la planificación periódica
 
@@ -1058,11 +1139,11 @@ contar lo que hizo la corrida y para que el módulo muestre el reporte.
 
 ### 9.6 Estado de la base de datos de desarrollo
 
-- **22 migraciones aplicadas**: 3 del esqueleto, 16 del dominio, 2 de la planificación periódica
+- **28 migraciones aplicadas**: 3 del esqueleto, 22 del dominio, 2 de la planificación periódica
   y 1 del buzón de notificaciones.
-- **7 catálogos sembrados**: 3 energías, 3 tipos de objetivo, 6 ítems de preparación, 15 franjas,
-  4 duraciones, 4 resultados y 5 preguntas.
-- **9 diarios registrados** (del 28/09/2026 al 06/10/2026).
+- **8 catálogos sembrados**: 3 energías, 3 tipos de objetivo, 6 ítems de preparación, 15 franjas,
+  4 duraciones, 4 resultados, 5 preguntas y 16 actividades diarias.
+- **28 diarios registrados** (del 28/09/2026 al 25/10/2026).
 - Sin libros en la cola de planificación y sin registros de corridas al momento de esta
   redacción.
 
@@ -1119,7 +1200,7 @@ Aplicación **monolítica Laravel 12** con MVC enriquecido:
         │ Eloquent
 ┌───────▼──────────────────────────────────────────────────────────────────┐
 │  MySQL · base «planificador-diario»                                      │
-│  daily_plans + 6 hijas/pivote + 7 catálogos + 2 de planificación         │
+│  daily_plans + 7 hijas/pivote + 8 catálogos + 2 semanales + 2 de planificación  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1230,7 +1311,7 @@ planificadordiario-transformaconecta/
 │                                                 logging · mail · mupdf · queue · services · session
 ├── database/
 │   ├── migrations/                               22 migraciones
-│   ├── seeders/                                  Los 7 catálogos y 2 seeders de notificaciones
+│   ├── seeders/                                  Los 8 catálogos y 2 seeders de notificaciones
 │   └── database.sqlite                           Residuo de la primera etapa (no se usa)
 │
 ├── public/                                       Raíz web real de Laravel
@@ -1382,7 +1463,7 @@ escritos en español dentro de `Helper`.
    php artisan migrate --seed
    ```
 
-   (22 migraciones y los 7 catálogos; los seeders son idempotentes.)
+   (28 migraciones y los 8 catálogos; los seeders son idempotentes.)
 
 7. **Crear la planilla de planificación periódica** (no viaja en el repositorio, porque vive en
    el disco privado):
@@ -1894,7 +1975,7 @@ vendor/bin/pint             # corrige
 | **Bloque de acción** | Unidad de foco: duración (5/10/15/20 min), resultado esperado y tarea |
 | **Cierre del día** | Los cuatro campos finales: logros, pendiente, cuándo y orgullo |
 | **Foco** | Minutos totales de los bloques de acción del día |
-| **Rendimiento** | Puntaje de 0 a 100 (horario 60 %, objetivos 30 %, preparativos 10 %) |
+| **Rendimiento** | Puntaje de 0 a 100 (horario 45 %, objetivos 25 %, actividades 20 %, preparativos 10 %) |
 | **Punto crítico** | Cantidad de señales a partir de la cual el rendimiento baja respecto al promedio, con un umbral de 8 puntos |
 | **Franja del día** | Madrugada (0-5), Mañana (6-11), Tarde (12-17), Noche (18-23) |
 | **Marca de muestra** | Marca de agua diagonal `SPECIMEN` de los documentos de prueba |
@@ -1945,12 +2026,12 @@ demás. Commit que la define: `ece6edd` «se implementa limpieza del grafico» (
 | PDF del día | Hoja institucional en carta, con marca de agua `SPECIMEN` opcional |
 | Reporte detallado | `.xlsx` de **25 columnas**, un diario por fila |
 | Resumen de desempeño | PDF con números, **7 secciones redactadas**, tabla día por día y **3 gráficos** |
-| Catálogos | 7 catálogos con `sort_order` e `is_active`, sembrados de forma idempotente |
+| Catálogos | 8 catálogos con `sort_order` e `is_active`, sembrados de forma idempotente |
 | Navegación e identidad | Portada, menú lateral, cabecera con reloj, paleta institucional y diseño responsive |
 | Publicación | Acceso desde la raíz del proyecto con `index.php` de reenvío y `.htaccess` con bloqueos |
 
-**Números de la versión.** 14 tablas de dominio (7 catálogos + la eje + 6 hijas o de pivote),
-19 migraciones aplicadas, 7 catálogos sembrados y 14 rutas de la aplicación.
+**Números de la versión.** 18 tablas de dominio (8 catálogos + la eje + 7 hijas o de pivote + 2
+semanales), 28 migraciones aplicadas, 8 catálogos sembrados y 16 rutas de la aplicación.
 
 ### 21.3 V 1.02 — manejo de errores
 
