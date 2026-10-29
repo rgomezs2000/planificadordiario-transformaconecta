@@ -193,6 +193,7 @@
              tabla. Las cuatro columnas se reparten solas (autoWidth). --}}
         <table class="table tf-tabla mb-0" id="tabla-diarios"
                data-url-tabla="{{ route('diario.tabla') }}"
+               data-url-huella="{{ route('diario.huella') }}"
                data-url-reporte="{{ route('diario.reporte') }}"
                data-url-ver="{{ route('diario.show', ['dailyPlan' => '__ID__']) }}"
                data-url-editar="{{ route('diario.edit', ['dailyPlan' => '__ID__']) }}"
@@ -267,6 +268,12 @@
             /** Lo último que se pidió, para no repetir la misma búsqueda. */
             var ultimaBusqueda = null;
 
+            /** Huella del listado que se está mostrando, para detectar cambios. */
+            var huellaActual = null;
+
+            /** Evita que dos comprobaciones de la huella se pisen. */
+            var comprobandoHuella = false;
+
             /** Espera antes de buscar mientras se escribe, para no pedir por tecla. */
             var espera = null;
 
@@ -323,6 +330,8 @@
 
                             return [];
                         }
+
+                        huellaActual = (json.data && json.data.huella) || null;
 
                         return (json.data && json.data.plans) || [];
                     },
@@ -574,7 +583,58 @@
                 }
 
                 ultimaBusqueda = $.extend({}, nuevos);
+                huellaActual = null;
                 tabla.ajax.reload();
+            }
+
+            /**
+             * Comprueba si el listado cambió desde la última carga.
+             *
+             * Consulta sólo la huella (no las filas). Si cambió, recarga la
+             * tabla conservando la página, el orden y los filtros actuales.
+             */
+            function comprobarHuella() {
+                if (comprobandoHuella || document.visibilityState !== 'visible') {
+                    return;
+                }
+
+                var filtrosConsultados = $.extend({}, filtros);
+
+                comprobandoHuella = true;
+
+                $.ajax({
+                    url: $tabla.attr('data-url-huella'),
+                    type: 'GET',
+                    dataType: 'json',
+                    cache: false,
+                    data: filtrosConsultados,
+                    timeout: 15000
+                }).done(function (respuesta) {
+                    var nueva = respuesta && respuesta.data ? respuesta.data.huella : null;
+
+                    if (! nueva) {
+                        return;
+                    }
+
+                    // Si mientras se consultaba cambió el filtro, esta respuesta
+                    // ya no corresponde a lo que se está viendo.
+                    if (! filtrosIguales(filtros, filtrosConsultados)) {
+                        return;
+                    }
+
+                    if (huellaActual === null) {
+                        huellaActual = nueva;
+
+                        return;
+                    }
+
+                    if (nueva !== huellaActual) {
+                        huellaActual = nueva;
+                        tabla.ajax.reload(null, false);
+                    }
+                }).always(function () {
+                    comprobandoHuella = false;
+                });
             }
 
             /**
@@ -609,6 +669,7 @@
 
                 marcarDia('');
                 pintarPaneles();
+                huellaActual = null;
                 tabla.ajax.reload();
             }
 
@@ -726,6 +787,17 @@
             });
 
             pintarPaneles();
+
+            // Actualización en vivo: cada 10 segundos se pregunta si cambió la
+            // huella; si cambió, la tabla se recarga sola. Al volver a la
+            // pestaña también se comprueba de inmediato.
+            window.setInterval(comprobarHuella, 10000);
+
+            $(document).on('visibilitychange.tcListado', function () {
+                if (document.visibilityState === 'visible') {
+                    comprobarHuella();
+                }
+            });
         });
     </script>
 

@@ -44,7 +44,7 @@ return [
     'segundos_entre_generaciones' => (int) env('NOTIFICACIONES_SEGUNDOS_ENTRE_GENERACIONES', 55),
 
     // Cada cuántos milisegundos la campanita consulta el contador.
-    'intervalo_consulta_ms' => (int) env('NOTIFICACIONES_INTERVALO_MS', 15000),
+    'intervalo_consulta_ms' => (int) env('NOTIFICACIONES_INTERVALO_MS', 10000),
 
     // Sonido y aviso del escritorio: valores iniciales de los interruptores
     // del buzón. La preferencia elegida se guarda en el navegador.

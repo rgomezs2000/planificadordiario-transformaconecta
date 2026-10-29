@@ -62,7 +62,7 @@ vea lo mismo.
                     └───────┬───────┘   └───┬──────────────────────┘
                             │               │
                     campanita / bandeja ◄───┘
-                    (contador + tabla, AJAX cada 15 s)
+                    (contador + tabla, AJAX cada 10 s)
                     una sola lista, sin separar por motor
 ```
 
@@ -176,8 +176,11 @@ atributos `data-*` de `#campanaNotificaciones`, no está escrita a mano en el JS
 
 ### Tiempo real
 
-- El navegador consulta `/notificaciones/contador` cada `NOTIFICACIONES_INTERVALO_MS` (15 s por
+- El navegador consulta `/notificaciones/contador` cada `NOTIFICACIONES_INTERVALO_MS` (10 s por
   defecto). Cada respuesta trae las no leídas, el total y las últimas cinco.
+- Cuando la huella del buzón cambia (una notificación nueva, una leída o una archivada), las
+  tablas visibles del panel y de la página se refrescan solas, sin recargar la pantalla. Si hay
+  filas seleccionadas, la tabla espera a que se deseleccionen para no perder la selección.
 - El contador aprovecha para evaluar las reglas, como máximo una vez cada
   `NOTIFICACIONES_SEGUNDOS_ENTRE_GENERACIONES` (55 s) mediante una clave de caché. Así el aviso
   aparece aunque el cron no esté corriendo.
@@ -218,7 +221,7 @@ Los `{uuid}` están restringidos con `Route::whereUuid()`.
 | `NOTIFICACIONES_MARGEN_ACTIVIDADES` | `0` | Minutos de gracia antes de recordar una actividad |
 | `NOTIFICACIONES_HORA_ACTIVIDADES` | `18:00` | Hora de reserva si una actividad no trae la suya |
 | `NOTIFICACIONES_SEGUNDOS_ENTRE_GENERACIONES` | `55` | Frecuencia mínima de evaluación desde el navegador |
-| `NOTIFICACIONES_INTERVALO_MS` | `15000` | Sondeo de la campanita |
+| `NOTIFICACIONES_INTERVALO_MS` | `10000` | Sondeo de la campanita |
 | `NOTIFICACIONES_SONIDO` | `true` | Sonido inicial (luego manda la preferencia guardada) |
 | `NOTIFICACIONES_ESCRITORIO` | `false` | Avisos del escritorio iniciales |
 | `NOTIFICACIONES_LIMITE_LISTADO` | `300` | Filas máximas del listado |

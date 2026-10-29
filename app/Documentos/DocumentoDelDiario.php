@@ -19,11 +19,11 @@ use ZipArchive;
  * Los dos se guardan en el disco privado de la aplicación y se reutilizan:
  *
  *     storage/app/private/documentos/pdf/{id}/planificador-diario-FECHA[-muestra].pdf
- *     storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v2.jpg
- *     storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v2.zip
+ *     storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v3.jpg
+ *     storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v3.zip
  *
  * El sufijo "-muestra" distingue las dos variantes (con y sin marca de agua) y
- * el "-v2" es la revisión de la conversión (ver REVISION_DE_LA_CONVERSION):
+ * el "-v3" es la revisión de la conversión (ver REVISION_DE_LA_CONVERSION):
  * dentro del ZIP las páginas van sin ninguno de los dos, para que se llamen
  * igual en todas las variantes.
  *
@@ -54,7 +54,7 @@ class DocumentoDelDiario
      * versión anterior. Los archivos viejos quedan en su carpeta y se pueden
      * borrar a mano.
      */
-    private const CARPETA_BASE = 'documentos-v2';
+    private const CARPETA_BASE = 'documentos-v3';
 
     /**
      * Revisión de la conversión a imagen.
@@ -68,7 +68,7 @@ class DocumentoDelDiario
      * Ojo: al cambiarla, las imágenes de la revisión anterior quedan huérfanas
      * en su carpeta y conviene borrarlas a mano.
      */
-    private const REVISION_DE_LA_CONVERSION = 'v2';
+    private const REVISION_DE_LA_CONVERSION = 'v3';
 
     public function __construct(private readonly DailyPlan $plan) {}
 

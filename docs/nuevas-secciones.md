@@ -121,9 +121,9 @@ plantilla → libro → corrida → base de datos.
 
 ## 8. Documentos y caché
 
-Los PDF y JPG se guardan en `storage/app/private/documentos-v2`. Al cambiar el diseño se cambió la
+Los PDF y JPG se guardan en `storage/app/private/documentos-v3`. Al cambiar el diseño se cambió la
 carpeta base a propósito: los documentos anteriores se regeneran solos la próxima vez que se piden.
-Las carpetas viejas (`documentos/`) se pueden borrar a mano.
+Las carpetas viejas (`documentos/` y `documentos-v2/`) se pueden borrar a mano.
 
 ## 9. Pruebas
 

@@ -71,6 +71,9 @@ class DailyPlanController extends Controller
             return $this->jsonSuccess([
                 'plans' => $plans->map->toListArray()->all(),
                 'total' => $plans->count(),
+                // Huella del contenido: el navegador la consulta cada pocos
+                // segundos y recarga la tabla sólo si cambió.
+                'huella' => $this->huellaDelListado($plans),
                 // Se devuelven los filtros que realmente se aplicaron, para que
                 // el navegador pueda avisar qué se está mostrando.
                 'filtros' => array_filter(
@@ -83,6 +86,44 @@ class DailyPlanController extends Controller
 
             return $this->jsonError('No se pudo obtener el listado de diarios.', [], 500);
         }
+    }
+
+    /**
+     * Sólo la huella del listado (GET).
+     *
+     * La usa la tabla de «Consultar diario» para saber si hay algo nuevo sin
+     * traerse todas las filas. Acepta los mismos filtros que el listado: así
+     * sólo avisa de cambios dentro de lo que se está viendo.
+     */
+    public function huella(Request $request): JsonResponse
+    {
+        try {
+            $filtros = $this->filtrosDeLaPeticion($request);
+
+            return $this->jsonSuccess([
+                'huella' => $this->huellaDelListado(DailyPlan::allForList($filtros)),
+            ]);
+        } catch (Throwable $e) {
+            $this->registrarFallo($e, 'consultar la huella del listado');
+
+            return $this->jsonError('No se pudo consultar el estado del listado.', [], 500);
+        }
+    }
+
+    /**
+     * Huella del listado: identidad, fecha, energía y última modificación de
+     * cada día. Si se crea, elimina o modifica un diario, cambia.
+     *
+     * @param  \Illuminate\Support\Collection<int, DailyPlan>  $plans
+     */
+    private function huellaDelListado($plans): string
+    {
+        return md5($plans->map(fn (DailyPlan $plan) => implode('|', [
+            $plan->id,
+            $plan->plan_date?->toDateString(),
+            $plan->energy_level_id,
+            $plan->updated_at?->timestamp,
+        ]))->implode(';'));
     }
 
     /* ======================================================================

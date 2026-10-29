@@ -45,6 +45,10 @@ Route::prefix('diario')->name('diario.')->group(function () {
     Route::get('/listado', [DailyPlanController::class, 'index'])->name('listado');
     Route::get('/tabla', [DailyPlanController::class, 'list'])->name('tabla');
 
+    // Huella liviana del listado, para que la tabla se actualice sola cuando
+    // cambia algo sin traerse todas las filas en cada consulta.
+    Route::get('/huella', [DailyPlanController::class, 'huella'])->name('huella');
+
     // Reporte detallado en Excel, con los filtros del buscador
     Route::get('/reporte', [DailyPlanController::class, 'reporte'])->name('reporte');
 

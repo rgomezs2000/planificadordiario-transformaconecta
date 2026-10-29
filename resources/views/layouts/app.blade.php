@@ -226,7 +226,7 @@
 <script src="{{ asset('js/reloj.js') }}"></script>
 <script src="{{ asset('js/menu.js') }}"></script>
 <script src="{{ asset('js/app.js') }}"></script>
-<script src="{{ asset('js/notificaciones.js') }}"></script>
+<script src="{{ asset('js/notificaciones.js') }}?v={{ filemtime(public_path('js/notificaciones.js')) }}"></script>
 
 @stack('scripts')
 </body>

@@ -274,6 +274,31 @@ class NuevasSeccionesTest extends TestCase
     }
 
     /* ======================================================================
+     |  Listado en vivo
+     ====================================================================== */
+
+    public function test_la_huella_del_listado_cambia_al_crear_un_diario(): void
+    {
+        $antes = $this->getJson(route('diario.huella', absolute: false))
+            ->assertOk()
+            ->json('data.huella');
+
+        $this->postJson(route('diario.store', absolute: false), $this->payload())->assertCreated();
+
+        $despues = $this->getJson(route('diario.huella', absolute: false))
+            ->assertOk()
+            ->json('data.huella');
+
+        $this->assertNotSame($antes, $despues);
+
+        // La tabla y la huella liviana comparten el mismo valor.
+        $this->assertSame(
+            $despues,
+            $this->getJson(route('diario.tabla', absolute: false))->assertOk()->json('data.huella')
+        );
+    }
+
+    /* ======================================================================
      |  Análisis
      ====================================================================== */
 

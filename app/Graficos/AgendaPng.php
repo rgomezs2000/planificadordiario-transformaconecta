@@ -18,7 +18,7 @@ class AgendaPng
      * Alto del gráfico sin la leyenda. Es ajustado a propósito: con la leyenda
      * abajo, el PDF tiene que seguir entrando en una sola página.
      */
-    public const ALTO = 196;
+    public const ALTO = 160;
 
     public const MARGEN_LATERAL = 16;
 

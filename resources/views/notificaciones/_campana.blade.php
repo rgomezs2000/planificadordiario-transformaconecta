@@ -21,7 +21,7 @@
          data-url-lote-descartar="{{ route('notificaciones.lote.descartar') }}"
          data-url-sincronizar="{{ route('notificaciones.sincronizar') }}"
          data-url-panel="{{ route('notificaciones.index') }}"
-         data-intervalo="{{ (int) config('notificaciones.intervalo_consulta_ms', 15000) }}"
+         data-intervalo="{{ (int) config('notificaciones.intervalo_consulta_ms', 10000) }}"
          data-sonido="{{ config('notificaciones.sonido_activo', true) ? '1' : '0' }}"
          data-escritorio="{{ config('notificaciones.escritorio_activo', false) ? '1' : '0' }}"
          data-icono="{{ asset('favicon.ico') }}">

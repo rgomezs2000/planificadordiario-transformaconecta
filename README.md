@@ -257,7 +257,8 @@ buscar y filtrar. Lo que se filtra es exactamente lo que sale en el Excel y en e
 | Archivo | Rol |
 | --- | --- |
 | `DailyPlanController@index` | La página con el miniformulario y la tabla vacía |
-| `DailyPlanController@list` | `GET /diario/tabla`: los días filtrados en JSON |
+| `DailyPlanController@list` | `GET /diario/tabla`: los días filtrados en JSON, con su huella |
+| `DailyPlanController@huella` | `GET /diario/huella`: sólo la huella del listado, para el refresco en vivo |
 | `DailyPlan::allForList()` + `scopeFiltrado()` + `scopeSearch()` | La consulta |
 | `App\Filtros\Periodo` | Convierte el período elegido en un par de fechas |
 | `resources/views/diario/index.blade.php`, `public/js/app.js` | Filtros, tabla y acciones |
@@ -274,6 +275,12 @@ buscar y filtrar. Lo que se filtra es exactamente lo que sale en el Excel y en e
 
 Los filtros se combinan entre sí y se aplican sin botón. En cada fila: *Modificar*, *Ver*,
 *Documentos* y *Eliminar*.
+
+**Actualización en vivo.** Cada 10 segundos la página consulta `GET /diario/huella` con los
+mismos filtros y compara la huella con la que está mostrando. Si cambió (se creó, eliminó o
+modificó un día), recarga la tabla conservando la página, el orden y los filtros. La consulta de
+la huella no trae las filas, y sólo se hace con la pestaña visible; al volver a la pestaña se
+comprueba de inmediato.
 
 ### 4.4 Línea de tiempo del día
 
@@ -296,8 +303,13 @@ un modal para elegir el formato, con la casilla opcional de marca de agua `SPECI
 
 | Formato | Qué se obtiene |
 | --- | --- |
-| **PDF** | La hoja institucional en tamaño carta, una página, lista para imprimir o archivar |
+| **PDF** | La hoja institucional en tamaño carta, compacta en una página; el domingo con reflexión puede usar una segunda. Lista para imprimir o archivar |
 | **Imagen** | El mismo documento como JPG (si tiene una sola página) o como ZIP con una imagen por página. Pensado para compartir por mensajería |
+
+El contenido va en dos columnas equilibradas (meta, objetivos, horario y actividades a la
+izquierda; preparación, acción, cierre, meta personal y notas a la derecha), el gráfico del día va
+al pie **a todo el ancho** y la reflexión del domingo después del gráfico. Así el encabezado y el
+día quedan en la primera página, sin la hoja en blanco que aparecía cuando todo el bloque no cabía.
 
 **Archivos.** `DailyPlanController@printPdf` y `@image`, `resources/views/diario/pdf.blade.php`
 (el HTML que dompdf convierte) y `App\Documentos\DocumentoDelDiario`, que arma, guarda y reutiliza
@@ -307,9 +319,9 @@ los archivos.
 el PDF y la imagen **se guardan** y se reutilizan:
 
 ```
-storage/app/private/documentos/pdf/{id}/planificador-diario-FECHA[-muestra].pdf
-storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v2.jpg
-storage/app/private/documentos/jpg/{id}/planificador-diario-FECHA[-muestra]-v2.zip
+storage/app/private/documentos-v3/pdf/{id}/planificador-diario-FECHA[-muestra].pdf
+storage/app/private/documentos-v3/jpg/{id}/planificador-diario-FECHA[-muestra]-v3.jpg
+storage/app/private/documentos-v3/jpg/{id}/planificador-diario-FECHA[-muestra]-v3.zip
 ```
 
 1. Si el archivo pedido ya está, se entrega tal cual.
@@ -705,8 +717,9 @@ y Firestore mantiene el espejo interno para el push, sin pestañas ni bandejas s
   `NotificacionController` y `index.blade.php`.
 - **NoSQL interno**: `NotificacionFirestore`, `BuzonFirestore` y el cliente REST
   `ClienteFirestore`; no tiene controlador ni vista propios porque no se muestra aparte.
-- **Tiempo real**: `public/js/notificaciones.js` consulta el contador cada 15 s, actualiza el globo,
-  suena y muestra el aviso; `php artisan notificaciones:generar` corre cada minuto.
+- **Tiempo real**: `public/js/notificaciones.js` consulta el contador cada 10 s, actualiza el globo,
+  refresca la tabla visible cuando cambia el buzón, suena y muestra el aviso;
+  `php artisan notificaciones:generar` corre cada minuto.
 - **Detalle completo**: [docs/notificaciones.md](docs/notificaciones.md).
 
 ---

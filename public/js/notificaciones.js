@@ -93,7 +93,10 @@ window.Planificador = window.Planificador || {};
             filtrosEnlazados: false,
             sonidoActivo: true,
             escritorioActivo: false,
-            audio: null
+            audio: null,
+            reintentos: {},
+            huella: null,
+            pendientes: {}
         },
 
         /* ==================================================================
@@ -166,7 +169,7 @@ window.Planificador = window.Planificador || {};
                 loteDescartar: dato('url-lote-descartar'),
                 sincronizar: dato('url-sincronizar'),
                 panel: dato('url-panel'),
-                intervalo: parseInt(dato('intervalo'), 10) || 15000,
+                intervalo: parseInt(dato('intervalo'), 10) || 10000,
                 sonido: String(dato('sonido')) === '1',
                 escritorio: String(dato('escritorio')) === '1',
                 icono: dato('icono')
@@ -237,6 +240,13 @@ window.Planificador = window.Planificador || {};
             this.actualizarCampana(Number(datos.no_leidas || 0), inicial ? [] : nuevas);
             this.actualizarResumen(datos);
 
+            // La huella dice si el buzón cambió desde la consulta anterior:
+            // una notificación nueva, una leída o una archivada. Si cambió, se
+            // refrescan las tablas visibles sin recargar la página.
+            var huella = this.huellaDeContador(datos);
+            var cambio = this.estado.huella !== null && this.estado.huella !== huella;
+
+            this.estado.huella = huella;
             this.estado.cargado = true;
 
             if (! inicial && nuevas.length > 0) {
@@ -244,6 +254,53 @@ window.Planificador = window.Planificador || {};
                 this.mostrarAviso(nuevas);
                 this.mostrarEscritorio(nuevas);
             }
+
+            if (! inicial && cambio) {
+                this.recargarTablasEnVivo();
+            }
+        },
+
+        /** Huella del estado del buzón, para saber si hay algo nuevo. */
+        huellaDeContador: function (datos) {
+            var ultimas = $.map(datos.ultimas || [], function (notificacion) {
+                return notificacion && notificacion.uuid ? notificacion.uuid : '';
+            }).join(',');
+
+            return [
+                Number(datos.no_leidas || 0),
+                Number(datos.total || 0),
+                Number(datos.leidas || 0),
+                ultimas
+            ].join('|');
+        },
+
+        /**
+         * Refresca las tablas visibles del buzón cuando el sondeo detecta un
+         * cambio. Si una tabla tiene filas seleccionadas, espera a que se
+         * deseleccionen para no borrar la selección a mitad de una acción.
+         */
+        recargarTablasEnVivo: function () {
+            var self = this;
+
+            $.each(this.estado.tablas, function (id, registro) {
+                if (! registro || ! registro.tabla) {
+                    return;
+                }
+
+                if (! $('#' + id).is(':visible')) {
+                    self.estado.pendientes[id] = true;
+
+                    return;
+                }
+
+                if ($('#' + id + ' tbody [data-buzon-check]:checked').length > 0) {
+                    self.estado.pendientes[id] = true;
+
+                    return;
+                }
+
+                self.recargarTabla(id);
+            });
         },
 
         /* ==================================================================
@@ -666,6 +723,28 @@ window.Planificador = window.Planificador || {};
             var $tabla = $('#' + id);
             var pagina = !!(opciones && opciones.pagina);
 
+            // DataTables avisa con un alert del navegador cuando el Ajax falla.
+            // Acá se cambia por un mensaje del buzón y un reintento: si fue un
+            // corte momentáneo del servidor, la tabla se recupera sola.
+            if ($.fn.dataTable && $.fn.dataTable.ext && $.fn.dataTable.ext.errMode === 'alert') {
+                $.fn.dataTable.ext.errMode = function (settings, techNote, mensaje) {
+                    if (window.console && console.error) {
+                        console.error('DataTables:', mensaje);
+                    }
+
+                    var tablaId = $(settings && settings.nTable ? settings.nTable : []).attr('id') || '';
+
+                    if (tablaId.indexOf('tabla-notificaciones') === 0) {
+                        P.Notificaciones.mensaje(
+                            'No se pudo cargar el buzón de notificaciones. Reintentando…'
+                        );
+                        P.Notificaciones.reintentarTabla(tablaId);
+                    } else if (P.Alerta) {
+                        P.Alerta.error('No se pudieron cargar los datos de la tabla.');
+                    }
+                };
+            }
+
             var tabla = P.Tabla.crear($tabla, {
                 pageLength: pagina ? 10 : 5,
                 lengthChange: pagina,
@@ -709,6 +788,7 @@ window.Planificador = window.Planificador || {};
                     }
                 ],
                 drawCallback: function () {
+                    self.estado.reintentos[id] = 0;
                     self.actualizarSeleccion(id);
                 }
             });
@@ -789,6 +869,12 @@ window.Planificador = window.Planificador || {};
 
             $tabla.on('change.tcNotificacionesFila', '[data-buzon-check]', function () {
                 self.actualizarSeleccion(id);
+
+                // Si había una actualización esperando a que se terminara de
+                // elegir, se aplica al quedar la selección vacía.
+                if (self.estado.pendientes[id] && $tabla.find('tbody [data-buzon-check]:checked').length === 0) {
+                    self.recargarTabla(id);
+                }
             });
 
             $tabla.on('change.tcNotificacionesFila', 'thead [data-buzon-todos]', function () {
@@ -800,13 +886,48 @@ window.Planificador = window.Planificador || {};
         recargarTabla: function (id) {
             var registro = this.estado.tablas[id];
 
+            this.estado.pendientes[id] = false;
+
             if (registro && registro.tabla && $.fn.DataTable.isDataTable('#' + id)) {
                 registro.tabla.ajax.reload(null, false);
             }
         },
 
+        /**
+         * Reintenta una tabla que falló al cargar, con espera creciente.
+         * Se corta a los tres intentos para no insistir si el servidor sigue
+         * caído; la próxima consulta normal del buzón la vuelve a intentar.
+         */
+        reintentarTabla: function (id) {
+            var registro = this.estado.tablas[id];
+
+            if (! registro || ! registro.tabla) {
+                return;
+            }
+
+            var intentos = this.estado.reintentos[id] || 0;
+
+            if (intentos >= 3) {
+                this.mensaje('El buzón no se pudo cargar. Vuelve a abrirlo en unos segundos.');
+
+                return;
+            }
+
+            this.estado.reintentos[id] = intentos + 1;
+
+            var self = this;
+
+            window.setTimeout(function () {
+                self.recargarTabla(id);
+            }, 3000 * (intentos + 1));
+        },
+
         recargarTablas: function () {
             var self = this;
+
+            // Las tablas se acaban de refrescar: la próxima consulta al
+            // contador no necesita volver a recargarlas por el mismo cambio.
+            this.estado.huella = null;
 
             $.each(this.estado.tablas, function (id) {
                 self.recargarTabla(id);

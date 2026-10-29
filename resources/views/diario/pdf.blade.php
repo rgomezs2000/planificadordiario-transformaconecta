@@ -29,7 +29,7 @@
 
     <style>
         @page {
-            margin: 24px 24px 42px 24px;
+            margin: 18px 20px 20px 20px;
         }
 
         body {
@@ -50,7 +50,7 @@
         /* ---------- Cabecera ---------- */
         .cabecera td {
             vertical-align: middle;
-            padding-bottom: 6px;
+            padding-bottom: 4px;
         }
 
         .marca {
@@ -117,14 +117,14 @@
 
         /* ---------- Datos del día ---------- */
         .datos {
-            margin-top: 8px;
-            margin-bottom: 8px;
+            margin-top: 5px;
+            margin-bottom: 5px;
         }
 
         .datos td {
             border: 1px solid #cfd9e6;
             background-color: #f4f7fb;
-            padding: 4px 6px;
+            padding: 3px 5px;
         }
 
         .datos .etiqueta {
@@ -141,22 +141,22 @@
 
         /* ---------- Secciones ---------- */
         .seccion {
-            margin-bottom: 6px;
+            margin-bottom: 1px;
             page-break-inside: avoid;
         }
 
         .seccion .titulo-seccion {
             color: #ffffff;
-            font-size: 8.5px;
+            font-size: 8px;
             font-weight: bold;
-            letter-spacing: 0.6px;
-            padding: 4px 6px;
+            letter-spacing: 0.5px;
+            padding: 2px 6px;
         }
 
         .seccion .cuerpo {
             border: 1px solid #cfd9e6;
             border-top: none;
-            padding: 4px 6px;
+            padding: 2px 5px;
         }
 
         .azul {
@@ -182,7 +182,7 @@
         /* ---------- Objetivos ---------- */
         .objetivo td {
             border-bottom: 1px dashed #cfd9e6;
-            padding: 3px 2px;
+            padding: 1px 2px;
             vertical-align: top;
         }
 
@@ -248,8 +248,8 @@
 
         .horario td {
             border-bottom: 1px solid #e4eaf2;
-            font-size: 8.5px;
-            padding: 3px 4px;
+            font-size: 8.2px;
+            padding: 1px 4px;
         }
 
         .horario .hora {
@@ -306,13 +306,17 @@
 
         /* ---------- Pie ---------- */
         .pie {
-            margin-top: 10px;
+            margin: 0;
             border-top: 2px solid #f0600c;
-            padding-top: 5px;
+            padding: 3px 0 0;
             color: #6b7a90;
             font-size: 7px;
             text-align: center;
-            line-height: 1.55;
+            line-height: 1.35;
+        }
+
+        .bloque-grafico {
+            margin-bottom: 0;
         }
 
         .pie strong {
@@ -337,7 +341,7 @@
         .actividades td {
             border-bottom: 1px dotted #e4eaf2;
             font-size: 8px;
-            padding: 2px 3px;
+            padding: 1px 3px;
             vertical-align: middle;
         }
 
@@ -421,8 +425,16 @@
         }
 
         /* Sólo cuando se pidió la marca de prueba */
+        /* La línea de tiempo ocupa todo el ancho de la página. */
+        .grafico-dia {
+            display: block;
+            width: 100% !important;
+            height: auto;
+            margin: 0;
+        }
+
         .aviso-muestra {
-            margin-top: 4px;
+            margin-top: 2px;
             color: #d90b0b;
             font-size: 7px;
             font-weight: bold;
@@ -598,79 +610,6 @@
                 </table>
             @endif
 
-            {{-- Mi meta personal: el seguimiento del día --}}
-            @php
-                $seguimiento = [
-                    '¿Qué hice hoy para acercarme a mi meta?' => $plan->personal_done_today,
-                    '¿Qué me ayudó?' => $plan->personal_helped,
-                    '¿Qué me dificultó?' => $plan->personal_hard,
-                ];
-                $haySeguimiento = collect($seguimiento)
-                    ->contains(fn (mixed $valor) => ! \App\Helpers\Helper::isBlank($valor));
-            @endphp
-
-            @if ($haySeguimiento)
-                <table class="seccion">
-                    <tr>
-                        <td class="titulo-seccion naranja">
-                            MI META PERSONAL ·
-                            {{ mb_strtoupper(\App\Helpers\Helper::dayName($plan->plan_date, capitalize: true)) }}
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="cuerpo seguimiento">
-                            @foreach ($seguimiento as $pregunta => $respuesta)
-                                <span class="campo">{{ $pregunta }}</span>
-                                <div class="respuesta">{{ $respuesta ?: 'Sin registrar' }}</div>
-                            @endforeach
-                        </td>
-                    </tr>
-                </table>
-            @endif
-
-            {{-- Notas --}}
-            <table class="seccion">
-                <tr>
-                    <td class="titulo-seccion navy">NOTAS DEL DÍA</td>
-                </tr>
-                <tr>
-                    <td class="cuerpo">
-                        @php $notas = $plan->notes->pluck('content')->filter()->implode("\n"); @endphp
-
-                        @if ($notas !== '')
-                            {!! nl2br(e($notas)) !!}
-                        @else
-                            <span class="sin-dato">Sin notas.</span>
-                        @endif
-                    </td>
-                </tr>
-            </table>
-
-            {{-- Reflexión de la semana: sólo el domingo, que es cuando se cierra --}}
-            @if ($plan->plan_date->isSunday() && $reflexionSemanal && $reflexionSemanal->tieneContenido())
-                <table class="seccion">
-                    <tr>
-                        <td class="titulo-seccion rojo">REFLEXIÓN DE LA SEMANA</td>
-                    </tr>
-                    <tr>
-                        <td class="cuerpo reflexion">
-                            <div class="meta">
-                                <span class="semana">{{ mb_strtoupper($reflexionSemanal->etiqueta()) }}</span>
-                            </div>
-
-                            @foreach ($reflexionSemanal->respuestas() as $fila)
-                                @if (! \App\Helpers\Helper::isBlank($fila['respuesta']))
-                                    <div class="par">
-                                        <span class="pregunta">{{ $fila['pregunta'] }}</span>
-                                        {{ $fila['respuesta'] }}
-                                    </div>
-                                @endif
-                            @endforeach
-                        </td>
-                    </tr>
-                </table>
-            @endif
-
         </td>
 
         {{-- -------------------------- DERECHA -------------------------- --}}
@@ -771,13 +710,89 @@
                 </tr>
             </table>
 
+            {{-- Mi meta personal: el seguimiento del día --}}
+            @php
+                $seguimiento = [
+                    '¿Qué hice hoy para acercarme a mi meta?' => $plan->personal_done_today,
+                    '¿Qué me ayudó?' => $plan->personal_helped,
+                    '¿Qué me dificultó?' => $plan->personal_hard,
+                ];
+                $haySeguimiento = collect($seguimiento)
+                    ->contains(fn (mixed $valor) => ! \App\Helpers\Helper::isBlank($valor));
+            @endphp
+
+            @if ($haySeguimiento)
+                <table class="seccion">
+                    <tr>
+                        <td class="titulo-seccion naranja">
+                            MI META PERSONAL ·
+                            {{ mb_strtoupper(\App\Helpers\Helper::dayName($plan->plan_date, capitalize: true)) }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="cuerpo seguimiento">
+                            @foreach ($seguimiento as $pregunta => $respuesta)
+                                <span class="campo">{{ $pregunta }}</span>
+                                <div class="respuesta">{{ $respuesta ?: 'Sin registrar' }}</div>
+                            @endforeach
+                        </td>
+                    </tr>
+                </table>
+            @endif
+
+            {{-- Notas --}}
+            <table class="seccion">
+                <tr>
+                    <td class="titulo-seccion navy">NOTAS DEL DÍA</td>
+                </tr>
+                <tr>
+                    <td class="cuerpo">
+                        @php $notas = $plan->notes->pluck('content')->filter()->implode("\n"); @endphp
+
+                        @if ($notas !== '')
+                            {!! nl2br(e($notas)) !!}
+                        @else
+                            <span class="sin-dato">Sin notas.</span>
+                        @endif
+                    </td>
+                </tr>
+            </table>
+
         </td>
     </tr>
 </table>
 
-{{-- ====================== GRÁFICO DEL DÍA ========================== --}}
-{{-- El PDF no ejecuta JavaScript: el gráfico llega ya dibujado como imagen. --}}
-<table class="seccion">
+{{-- Reflexión de la semana: sólo el domingo, antes del gráfico, para que el
+     gráfico y el pie queden juntos al final. --}}
+@if ($plan->plan_date->isSunday() && $reflexionSemanal && $reflexionSemanal->tieneContenido())
+    <table class="seccion">
+        <tr>
+            <td class="titulo-seccion rojo">REFLEXIÓN DE LA SEMANA</td>
+        </tr>
+        <tr>
+            <td class="cuerpo reflexion">
+                <div class="meta">
+                    <span class="semana">{{ mb_strtoupper($reflexionSemanal->etiqueta()) }}</span>
+                </div>
+
+                @foreach ($reflexionSemanal->respuestas() as $fila)
+                    @if (! \App\Helpers\Helper::isBlank($fila['respuesta']))
+                        <div class="par">
+                            <span class="pregunta">{{ $fila['pregunta'] }}</span>
+                            {{ $fila['respuesta'] }}
+                        </div>
+                    @endif
+                @endforeach
+            </td>
+        </tr>
+    </table>
+@endif
+
+{{-- ====================== GRÁFICO Y PIE ============================ --}}
+{{-- El PDF no ejecuta JavaScript: el gráfico llega ya dibujado como imagen.
+     El pie va dentro de la misma tabla para que nunca se separe del gráfico
+     ni quede solo en una página. --}}
+<table class="seccion bloque-grafico">
     <tr>
         <td class="titulo-seccion turquesa">MI DÍA EN EL TIEMPO</td>
     </tr>
@@ -786,24 +801,22 @@
             @if ($plan->scheduleEntries->isEmpty())
                 <span class="sin-dato">Sin franjas de horario para graficar.</span>
             @else
-                <img src="{{ $grafico }}" alt="Línea de tiempo de las actividades del día"
-                     style="width: 100%; height: auto;">
+                <img class="grafico-dia" src="{{ $grafico }}" alt="Línea de tiempo de las actividades del día">
+            @endif
+        </td>
+    </tr>
+    <tr>
+        <td class="pie">
+            <strong>MI PLANIFICADOR DIARIO</strong><br>
+            <span class="lema">LO IMPORTANTE NO ES EL PENSAMIENTO, LO IMPORTANTE ES LA ACCIÓN</span><br>
+            <span class="futuro">¡TRANSFORMANDO NUESTRO FUTURO!</span> ·
+            Programa de Desarrollo Personal "Transforma-Conecta" · ©{{ now()->year }}
+            @if ($marca)
+                <span class="aviso-muestra">· DOCUMENTO DE MUESTRA · SPECIMEN</span>
             @endif
         </td>
     </tr>
 </table>
-
-{{-- ============================== PIE =============================== --}}
-<div class="pie">
-    <strong>MI PLANIFICADOR DIARIO</strong><br>
-    <span class="lema">LO IMPORTANTE NO ES EL PENSAMIENTO, LO IMPORTANTE ES LA ACCIÓN</span><br>
-    <span class="futuro">¡TRANSFORMANDO NUESTRO FUTURO!</span><br>
-    Programa de Desarrollo Personal "Transforma-Conecta" · ©{{ now()->year }}
-</div>
-
-@if ($marca)
-    <div class="aviso-muestra">DOCUMENTO DE MUESTRA · SPECIMEN</div>
-@endif
 
 </body>
 </html>
